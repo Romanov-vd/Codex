@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image as PILImage, ImageDraw, ImageFont
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from reportlab.pdfbase import pdfmetrics
@@ -17,6 +17,9 @@ from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from xml.sax.saxutils import escape
+import shutil
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'reports'
@@ -311,9 +314,152 @@ def footer(canvas, document):
         canvas.setFont('Body',9)
         canvas.drawCentredString(A4[0]/2,27,str(document.page))
 
-pdf=SimpleDocTemplate(str(OUT/'Отчет.pdf'),pagesize=A4,rightMargin=20*2.83465,
-    leftMargin=20*2.83465,topMargin=18*2.83465,bottomMargin=18*2.83465,
-    title='Лабораторная работа №2. Варианты 1–3',author='')
-pdf.build(story,onFirstPage=footer,onLaterPages=footer)
+
+def apply_sample_format(document):
+    """Typography measured from the supplied classmate report; no text is copied."""
+    from docx.shared import Twips
+    for section in document.sections:
+        section.page_width=Twips(11906)
+        section.page_height=Twips(16838)
+        section.top_margin=Twips(1134)
+        section.bottom_margin=Twips(1134)
+        section.left_margin=Twips(1701)
+        section.right_margin=Twips(850)
+        section.header_distance=Twips(720)
+        section.footer_distance=Twips(720)
+        section.gutter=Twips(0)
+        section.different_first_page_header_footer=True
+
+    def font(run, name='Times New Roman', size=14, bold=False):
+        run.font.name=name
+        run.font.size=Pt(size)
+        run.font.color.rgb=RGBColor(0,0,0)
+        run.font.bold=bold
+        run.font.italic=False
+        run.font.underline=False
+        fonts=run._r.get_or_add_rPr().get_or_add_rFonts()
+        for key in list(fonts.attrib):
+            if 'theme' in key.lower(): del fonts.attrib[key]
+        for key in ['ascii','hAnsi','eastAsia','cs']: fonts.set(qn('w:'+key),name)
+
+    normal=document.styles['Normal']
+    normal.font.name='Times New Roman'
+    normal.font.size=Pt(14)
+    normal.font.bold=False
+    normal.paragraph_format.first_line_indent=Twips(720)
+    normal.paragraph_format.line_spacing=1.5
+    normal.paragraph_format.space_before=Pt(0)
+    normal.paragraph_format.space_after=Pt(0)
+    normal.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+    heading=document.styles['Heading 1']
+    heading.font.name='Times New Roman'
+    heading.font.size=Pt(14)
+    heading.font.bold=True
+    heading.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    heading.paragraph_format.first_line_indent=Twips(0)
+    heading.paragraph_format.space_before=Pt(0)
+    heading.paragraph_format.space_after=Pt(0)
+    heading.paragraph_format.line_spacing=1.5
+
+    for i, paragraph in enumerate(document.paragraphs):
+        pf=paragraph.paragraph_format
+        is_code=any(run.font.name=='Courier New' for run in paragraph.runs)
+        is_heading=paragraph.style.name.startswith('Heading')
+        is_picture=bool(paragraph._p.xpath('.//w:drawing'))
+        is_caption=paragraph.text.startswith('Рисунок ')
+        is_equation=paragraph.alignment==WD_ALIGN_PARAGRAPH.CENTER and not is_heading and not is_caption and i>10
+        pf.space_before=Pt(0)
+        pf.space_after=Pt(0)
+        pf.line_spacing=1.5
+        pf.first_line_indent=Twips(720)
+        pf.left_indent=Twips(0)
+        pf.right_indent=Twips(0)
+        pf.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+        pf.keep_together=False
+        pf.keep_with_next=False
+        # Old page breaks were positioned for 10–12 pt text. Let the larger
+        # sample typography flow naturally, retaining title/appendix boundaries.
+        for page_break in list(paragraph._p.xpath('.//w:br[@w:type="page"]')):
+            page_break.getparent().remove(page_break)
+        pf.page_break_before=(i==11 or paragraph.text.startswith('Приложение А.')
+                              or paragraph.text.startswith('Приложение Б.'))
+        for run in paragraph.runs:font(run,bold=is_heading)
+        if is_heading:
+            pf.alignment=WD_ALIGN_PARAGRAPH.CENTER
+            pf.first_line_indent=Twips(0)
+            pf.keep_with_next=True
+            pf.keep_together=True
+        elif is_code:
+            pf.line_spacing=1.0
+            pf.first_line_indent=Twips(0)
+            pf.widow_control=False
+            for run in paragraph.runs:font(run,'Consolas',12)
+        elif is_picture or is_caption or is_equation:
+            pf.alignment=WD_ALIGN_PARAGRAPH.CENTER
+            pf.first_line_indent=Twips(720) if is_caption else Twips(0)
+            pf.keep_together=True
+            pf.keep_with_next=is_picture
+        if not paragraph.text and not is_picture:
+            pf.line_spacing=Pt(1)
+            pf.line_spacing_rule=WD_LINE_SPACING.EXACTLY
+            for run in paragraph.runs:font(run,size=1)
+        if i<10:
+            pf.alignment=WD_ALIGN_PARAGRAPH.CENTER
+            pf.first_line_indent=Twips(0)
+            pf.space_before=Pt(14) if paragraph.text.strip() and i else Pt(0)
+            pf.space_after=Pt(14) if paragraph.text.strip() else Pt(0)
+            if not paragraph.text.strip():
+                pf.line_spacing=Pt(14)
+                pf.line_spacing_rule=WD_LINE_SPACING.EXACTLY
+            if i==0:pf.first_line_indent=Twips(720)
+            if i==3:
+                for run in paragraph.runs:font(run,bold=True)
+            if i==7:pf.alignment=WD_ALIGN_PARAGRAPH.LEFT
+
+    for shape in document.inline_shapes:
+        if shape.width > Twips(9355):
+            shape.height=round(shape.height*Twips(9355)/shape.width)
+            shape.width=Twips(9355)
+    for table in document.tables:
+        table.autofit=False
+        column_width=Twips(9355//len(table.columns))
+        for column in table.columns:column.width=column_width
+        width=table._tbl.tblPr.find(qn('w:tblW'))
+        width.set(qn('w:type'),'dxa')
+        width.set(qn('w:w'),'9355')
+        for row_index,row in enumerate(table.rows):
+            row._tr.get_or_add_trPr().append(OxmlElement('w:cantSplit'))
+            if row_index==0:row._tr.get_or_add_trPr().append(OxmlElement('w:tblHeader'))
+            for cell in row.cells:
+                cell.width=column_width
+                for paragraph in cell.paragraphs:
+                    pf=paragraph.paragraph_format
+                    pf.space_before=pf.space_after=Pt(0)
+                    pf.line_spacing=1.5
+                    pf.first_line_indent=Twips(0)
+                    pf.alignment=WD_ALIGN_PARAGRAPH.LEFT
+                    pf.keep_with_next=(row_index==0)
+                    for run in paragraph.runs:font(run)
+    for section in document.sections:
+        for paragraph in section.footer.paragraphs:
+            paragraph.paragraph_format.line_spacing=1.15
+            paragraph.paragraph_format.first_line_indent=Twips(0)
+            paragraph.paragraph_format.space_before=paragraph.paragraph_format.space_after=Pt(0)
+            paragraph.alignment=WD_ALIGN_PARAGRAPH.CENTER
+            for run in paragraph.runs:font(run)
+
+
+apply_sample_format(doc)
 doc.save(OUT/'Отчет.docx')
+office=shutil.which('soffice') or shutil.which('libreoffice')
+if not office:
+    raise RuntimeError('Install LibreOffice to export the formatted DOCX as PDF.')
+with tempfile.TemporaryDirectory(prefix='kg-report-') as directory:
+    destination=Path(directory)
+    subprocess.run([office,'-env:UserInstallation='+ (destination/'profile').as_uri(),
+                    '--headless','--convert-to','pdf:writer_pdf_Export',
+                    '--outdir',str(destination),str(OUT/'Отчет.docx')],check=True)
+    exported=destination/'Отчет.pdf'
+    if not exported.is_file():raise RuntimeError('LibreOffice did not export the PDF.')
+    shutil.copyfile(exported,OUT/'Отчет.pdf')
 print('Created reports/Отчет.pdf and reports/Отчет.docx')
