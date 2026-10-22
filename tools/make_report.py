@@ -4,8 +4,10 @@ import json, math
 import numpy as np
 from PIL import Image as PILImage, ImageDraw, ImageFont
 from docx import Document
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, PageBreak,
@@ -72,7 +74,7 @@ rank_fig=montage('ranks',rank_items,4)
 for name,file in [('Body','DejaVuSerif.ttf'),('Bold','DejaVuSerif-Bold.ttf'),('Mono','DejaVuSansMono.ttf')]:
     pdfmetrics.registerFont(TTFont(name,font_path+file))
 pdfmetrics.registerFontFamily('Body',normal='Body',bold='Bold',italic='Body',boldItalic='Bold')
-style = ParagraphStyle('body',fontName='Body',fontSize=10.5,leading=14.5,spaceAfter=7,alignment=TA_JUSTIFY)
+style = ParagraphStyle('body',fontName='Body',fontSize=10.5,leading=14.5,spaceAfter=7,alignment=TA_JUSTIFY,textColor=colors.black)
 heading = ParagraphStyle('heading',parent=style,fontName='Bold',fontSize=14,leading=18,spaceAfter=13,alignment=0)
 small = ParagraphStyle('small',parent=style,fontSize=8.4,leading=11,alignment=0)
 center = ParagraphStyle('center',parent=style,alignment=TA_CENTER)
@@ -83,16 +85,53 @@ doc=Document()
 section=doc.sections[0]
 section.top_margin=Cm(2);section.bottom_margin=Cm(2)
 section.left_margin=Cm(2);section.right_margin=Cm(2)
-doc.styles['Normal'].font.name='Times New Roman'
-doc.styles['Normal'].font.size=Pt(12)
-doc.styles['Normal'].paragraph_format.space_after=Pt(6)
+# Override Word's theme fonts and blue heading styles explicitly.
+for document_style in doc.styles:
+    if not hasattr(document_style, 'font'):
+        continue
+    document_style.font.name = 'Times New Roman'
+    document_style.font.color.rgb = RGBColor(0, 0, 0)
+    document_style.font.underline = False
+    rpr = document_style.element.find(qn('w:rPr'))
+    if rpr is not None:
+        for element in rpr:
+            for attribute in list(element.attrib):
+                if 'theme' in attribute.lower():
+                    del element.attrib[attribute]
+for text_color in doc.styles.element.iter(qn('w:color')):
+    text_color.attrib.clear()
+    text_color.set(qn('w:val'), '000000')
+normal = doc.styles['Normal']
+normal.font.size=Pt(12)
+normal.paragraph_format.space_after=Pt(6)
+normal.paragraph_format.line_spacing=1.15
+normal.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.JUSTIFY
+normal.paragraph_format.first_line_indent=Cm(1.25)
+normal.paragraph_format.widow_control=True
+title_style=doc.styles['Heading 1']
+title_style.font.size=Pt(14)
+title_style.font.bold=True
+title_style.paragraph_format.alignment=WD_ALIGN_PARAGRAPH.LEFT
+title_style.paragraph_format.first_line_indent=Cm(0)
+section.different_first_page_header_footer=True
+footer_paragraph=section.footer.paragraphs[0]
+footer_paragraph.alignment=WD_ALIGN_PARAGRAPH.CENTER
+footer_paragraph.paragraph_format.first_line_indent=Cm(0)
+page_field=OxmlElement('w:fldSimple')
+page_field.set(qn('w:instr'), 'PAGE')
+footer_paragraph._p.append(page_field)
 
 
 def p(text, kind='body'):
     ps = {'body':style,'center':center,'small':small,'eq':equation}[kind]
     story.append(Paragraph(escape(text).replace('\n','<br/>'),ps))
     para=doc.add_paragraph(text)
-    if kind in ['center','eq']: para.alignment=WD_ALIGN_PARAGRAPH.CENTER
+    if kind in ['center','eq']:
+        para.alignment=WD_ALIGN_PARAGRAPH.CENTER
+        para.paragraph_format.first_line_indent=Cm(0)
+    if kind == 'small':
+        para.alignment=WD_ALIGN_PARAGRAPH.CENTER
+        para.paragraph_format.first_line_indent=Cm(0)
     if kind in ['small','eq']:
         for run in para.runs:run.font.size=Pt(10)
     return para
@@ -113,14 +152,19 @@ def table(headers, rows):
     cells=[[Paragraph(escape(str(x)),small) for x in row] for row in [headers]+rows]
     count=len(headers)
     t=Table(cells,colWidths=[(170*2.83465)/count]*count,repeatRows=1)
-    t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#eeeeee')),
-        ('GRID',(0,0),(-1,-1),0.4,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP'),
+    t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),colors.white),
+        ('GRID',(0,0),(-1,-1),0.4,colors.black),('VALIGN',(0,0),(-1,-1),'TOP'),
         ('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5)]))
     story.append(t);story.append(Spacer(1,8))
     tdoc=doc.add_table(rows=1, cols=count);tdoc.style='Table Grid'
     for cell,value in zip(tdoc.rows[0].cells,headers):cell.text=str(value)
     for row in rows:
         for cell,value in zip(tdoc.add_row().cells,row):cell.text=str(value)
+    for row in tdoc.rows:
+        for cell in row.cells:
+            for paragraph in cell.paragraphs:
+                paragraph.paragraph_format.first_line_indent=Cm(0)
+                paragraph.alignment=WD_ALIGN_PARAGRAPH.LEFT
 
 def metric_rows(methods):
     rows=[]
@@ -234,9 +278,9 @@ p('Усредняющие фильтры уменьшают колебания �
 p('Все 18 тестовых случаев пройдены. Демонстрационный запуск обработал четыре входных PNG и сохранил 44 выходных файла. Выводы основаны на полученных изображениях и сравнении с чистыми эталонами; заранее заданного универсального победителя среди методов нет.')
 h('Источники')
 p('1. Материалы задания: lab_1.pdf (внутри — «Лабораторная работа №2»), image_env.pdf, ReadMe.pdf, исходный интерфейс Image и tests_image.cpp.')
-p('2. Библиотеки stb_image / stb_image_write: https://github.com/nothings/stb — чтение и запись PNG; файлы предоставлены в задании.')
-p('3. doctest: https://github.com/doctest/doctest — тестовое окружение из задания.')
-p('4. ImageMagick: https://imagemagick.org/script/command-line-options.php — параметры -seed, -attenuate, +noise Gaussian.')
+p('2. Библиотеки stb_image и stb_image_write для чтения и записи PNG. Заголовочные файлы предоставлены вместе с заданием.')
+p('3. Библиотека doctest. Тестовое окружение и проверки класса Image из материалов задания.')
+p('4. Справочная документация ImageMagick. Добавление гауссова шума, выбор его интенсивности и начального значения генератора.')
 h('Приложения')
 p('В приложении А приведён модуль обработки: вспомогательные функции, преобразование в оттенки серого и реализации всех трёх вариантов. В приложении Б приведена реализация класса Image. Точка входа и тесты находятся в проекте; сторонние заголовки в текст отчёта не включены.')
 
@@ -256,6 +300,8 @@ for title, filename in [('Приложение А. Алгоритмы обраб
         code='\n'.join(wrapped[start:start+65])
         story.append(Preformatted(code,code_style))
         para=doc.add_paragraph()
+        para.paragraph_format.first_line_indent=Cm(0)
+        para.alignment=WD_ALIGN_PARAGRAPH.LEFT
         para.paragraph_format.line_spacing=1.0
         run=para.add_run(code);run.font.name='Courier New';run.font.size=Pt(8)
 
