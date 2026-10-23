@@ -24,12 +24,8 @@ int main(int argc, char** argv) {
         save(average(input, 3), "mean3.png");
         save(average(input, 5), "mean5.png");
         save(average(input, 5, 1.0), "gauss5.png");
-        save(rank(input, 3, Rank::Median), "median3.png");
-        save(rank(input, 5, Rank::Median), "median5.png");
-        save(rank(input, 3, Rank::Minimum), "min3.png");
-        save(rank(input, 3, Rank::Maximum), "max3.png");
         std::cout << input.width() << 'x' << input.height()
-                  << ": saved 11 PNG files to " << directory.string() << '\n';
+                  << ": saved 7 PNG files to " << directory.string() << '\n';
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

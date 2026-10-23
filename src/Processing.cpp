@@ -97,30 +97,4 @@ Image average(const Image& gray, int window, double sigma) {
     return result;
 }
 
-Image rank(const Image& gray, int window, Rank method) {
-    requireGray(gray);
-    requireWindow(window);
-    Image result(gray.width(), gray.height(), 1);
-    const int radius = window / 2;
-    std::vector<int> values(window * window);
-    for (int y = 0; y < gray.height(); ++y)
-        for (int x = 0; x < gray.width(); ++x) {
-            int k = 0;
-            for (int j = -radius; j <= radius; ++j)
-                for (int i = -radius; i <= radius; ++i)
-                    values[k++] = sample(gray,x+i,y+j);
-            int value;
-            if (method == Rank::Minimum)
-                value = *std::min_element(values.begin(), values.end());
-            else if (method == Rank::Maximum)
-                value = *std::max_element(values.begin(), values.end());
-            else {
-                auto middle = values.begin() + values.size()/2;
-                std::nth_element(values.begin(), middle, values.end());
-                value = *middle;
-            }
-            put(result,x,y,value);
-        }
-    return result;
-}
 }

@@ -109,7 +109,7 @@ while i<len(lines):
     i+=1
 
 doc.core_properties.title='Подготовка к защите — простыми словами'
-doc.core_properties.subject='Разбор программы лабораторной работы, варианты 1–3'
+doc.core_properties.subject='Разбор программы лабораторной работы, варианты 1 и 2'
 doc.core_properties.author=''
 doc.save(base.with_suffix('.docx'))
 office=shutil.which('soffice') or shutil.which('libreoffice')

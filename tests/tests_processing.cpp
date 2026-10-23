@@ -26,11 +26,6 @@ TEST_CASE("Constant field: filters preserve brightness including boundaries") {
         for (int y = 0; y < 7; ++y)
             for (int x = 0; x < 7; ++x) CHECK(at(result,x,y) == 0);
     }
-    for (auto filter : {Rank::Minimum, Rank::Median, Rank::Maximum}) {
-        const Image result = rank(input,3,filter);
-        for (int y = 0; y < 7; ++y)
-            for (int x = 0; x < 7; ++x) CHECK(at(result,x,y) == 90);
-    }
     for (double sigma : {0.0,1.0}) {
         const Image result = average(input,5,sigma);
         for (int y = 0; y < 7; ++y)
@@ -49,16 +44,12 @@ TEST_CASE("Vertical step: hand-computed edge responses") {
     CHECK(at(edges(input,Edge::Sobel),0,3) == 0);
 }
 
-TEST_CASE("Impulse: arithmetic, Gaussian and rank results") {
+TEST_CASE("Impulse: arithmetic and Gaussian results") {
     using namespace processing;
     Image impulse = uniform(0);
     impulse.setColor(3,3,255,0,0);
     CHECK(at(average(impulse,3),3,3) == 28);
     CHECK(at(average(impulse,3,1.0),3,3) == 52);
-    CHECK(at(rank(impulse,3,Rank::Median),3,3) == 0);
-    CHECK(at(rank(impulse,3,Rank::Minimum),3,3) == 0);
-    CHECK(at(rank(impulse,3,Rank::Maximum),2,2) == 255);
-    CHECK(at(rank(impulse,3,Rank::Maximum),0,0) == 0);
 }
 
 TEST_CASE("Gray conversion and invalid filter arguments") {
@@ -69,7 +60,6 @@ TEST_CASE("Gray conversion and invalid filter arguments") {
     Image gray = uniform(70);
     CHECK_THROWS_AS(average(gray,2),std::invalid_argument);
     CHECK_THROWS_AS(average(gray,3,-1),std::invalid_argument);
-    CHECK_THROWS_AS(rank(gray,0,Rank::Median),std::invalid_argument);
     CHECK_THROWS_AS(edges(Image(),Edge::Sobel),std::invalid_argument);
 }
 
