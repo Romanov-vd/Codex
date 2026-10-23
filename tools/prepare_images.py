@@ -4,7 +4,7 @@ import subprocess
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
-folder = ROOT / "input"
+folder = ROOT / "test_input"
 folder.mkdir(exist_ok=True)
 
 image = Image.new("L", (256, 192), 60)

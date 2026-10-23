@@ -1,5 +1,5 @@
 #include "doctest.h"
-#include "Processing.h"
+#include "Filters.h"
 #include "stb_image.h"
 #include "stb_image_write.h"
 #include <filesystem>
@@ -19,48 +19,49 @@ Image uniform(int value) {
 }
 
 TEST_CASE("Constant field: filters preserve brightness including boundaries") {
-    using namespace processing;
+    using namespace Filters;
     const Image input = uniform(90);
-    for (auto edge : {Edge::Laplace, Edge::Roberts, Edge::Sobel}) {
-        const Image result = edges(input,edge);
+    for (auto filter : {applyLaplacian, applyRoberts, applySobel}) {
+        const Image result = filter(input);
         for (int y = 0; y < 7; ++y)
             for (int x = 0; x < 7; ++x) CHECK(at(result,x,y) == 0);
     }
     for (double sigma : {0.0,1.0}) {
-        const Image result = average(input,5,sigma);
+        const Image result = sigma == 0 ? applyBoxBlur(input,5) : applyGaussianBlur(input,5,sigma);
         for (int y = 0; y < 7; ++y)
             for (int x = 0; x < 7; ++x) CHECK(at(result,x,y) == 90);
     }
 }
 
 TEST_CASE("Vertical step: hand-computed edge responses") {
-    using namespace processing;
+    using namespace Filters;
     Image input(7,7,1);
     for (int y = 0; y < 7; ++y)
         for (int x = 3; x < 7; ++x) input.setColor(x,y,40,0,0);
-    CHECK(at(edges(input,Edge::Laplace),2,3) == 40);
-    CHECK(at(edges(input,Edge::Roberts),2,3) == 57);
-    CHECK(at(edges(input,Edge::Sobel),2,3) == 160);
-    CHECK(at(edges(input,Edge::Sobel),0,3) == 0);
+    CHECK(at(applyLaplacian(input),2,3) == 40);
+    CHECK(at(applyRoberts(input),2,3) == 57);
+    CHECK(at(applySobel(input),2,3) == 160);
+    CHECK(at(applySobel(input),0,3) == 0);
 }
 
 TEST_CASE("Impulse: arithmetic and Gaussian results") {
-    using namespace processing;
+    using namespace Filters;
     Image impulse = uniform(0);
     impulse.setColor(3,3,255,0,0);
-    CHECK(at(average(impulse,3),3,3) == 28);
-    CHECK(at(average(impulse,3,1.0),3,3) == 52);
+    CHECK(at(applyBoxBlur(impulse,3),3,3) == 28);
+    CHECK(at(applyGaussianBlur(impulse,3,1.0),3,3) == 52);
 }
 
 TEST_CASE("Gray conversion and invalid filter arguments") {
-    using namespace processing;
+    using namespace Filters;
     Image rgb(1,1,3);
     rgb.setColor(0,0,255,0,0);
-    CHECK(at(grayscale(rgb),0,0) == 76);
+    CHECK(at(toGrayscale(rgb),0,0) == 76);
     Image gray = uniform(70);
-    CHECK_THROWS_AS(average(gray,2),std::invalid_argument);
-    CHECK_THROWS_AS(average(gray,3,-1),std::invalid_argument);
-    CHECK_THROWS_AS(edges(Image(),Edge::Sobel),std::invalid_argument);
+    CHECK_THROWS_AS(applyBoxBlur(gray,2),std::invalid_argument);
+    CHECK_THROWS_AS(applyGaussianBlur(gray,3,-1),std::invalid_argument);
+    CHECK_THROWS_AS(applyGaussianBlur(gray,3,0),std::invalid_argument);
+    CHECK_THROWS_AS(applySobel(Image()),std::invalid_argument);
 }
 
 TEST_CASE("Copy assignment, empty copy and no-op access") {

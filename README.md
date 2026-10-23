@@ -10,6 +10,10 @@
 
 ## Сборка и запуск
 
+Организация проекта: `Image.h/Image.cpp` хранят изображение, `Filters.h/Filters.cpp`
+содержат функции `applySobel`, `applyRoberts`, `applyLaplacian`, `applyBoxBlur`,
+`applyGaussianBlur` и `toGrayscale`, а `Source.cpp` запускает обработку.
+
 Нужен компилятор C++17. Библиотеки уже лежат в `include`, скачивать их не требуется.
 
 Linux, из корня проекта:
@@ -23,11 +27,11 @@ make demo
 Windows, терминал PowerShell с установленным MinGW-w64:
 
 ```powershell
-New-Item -ItemType Directory -Force build
-g++ -std=c++17 -O2 -Iinclude src/Image.cpp src/Processing.cpp src/main.cpp -o build/lab.exe
-g++ -std=c++17 -O2 -Iinclude src/Image.cpp src/Processing.cpp tests/tests_image.cpp tests/tests_processing.cpp -o build/tests.exe
-./build/tests.exe
-./build/lab.exe input/shapes_noisy.png output/shapes_noisy
+New-Item -ItemType Directory -Force bin
+g++ -std=c++17 -O2 -Iinclude src/Image.cpp src/Filters.cpp src/Source.cpp -o bin/app.exe
+g++ -std=c++17 -O2 -Iinclude src/Image.cpp src/Filters.cpp tests/tests_image.cpp tests/tests_filters.cpp -o bin/run_tests.exe
+./bin/run_tests.exe
+./bin/app.exe test_input/shapes_noisy.png test_output/shapes_noisy
 ```
 
 Visual Studio 2022:
@@ -38,7 +42,7 @@ Visual Studio 2022:
 3. В обозревателе решений нажать правой кнопкой по `Lab` → «Назначить запускаемым проектом».
 4. Выбрать `Debug`, `x64` и нажать **Ctrl+F5**.
 
-Пути к тестовому входу `input/shapes_noisy.png` и результатам `output/shapes_noisy`
+Пути к тестовому входу `test_input/shapes_noisy.png` и результатам `test_output/shapes_noisy`
 уже указаны в свойствах отладки; рабочий каталог — корень решения.
 После запуска открыть PNG из каталога результатов.
 Для другого входа: свойства `Lab` → «Отладка» → «Аргументы команды».
@@ -48,10 +52,14 @@ Visual Studio 2022:
 В решении два исполняемых проекта: одна программа лабораторной и отдельный запуск тестов.
 Файлы решения проверены по структуре и путям; запуск MSVC в облачной Linux-среде не выполнялся.
 
+Запуск без аргументов (`make run` или `./bin/app`) обрабатывает
+`test_input/shapes_noisy.png` и сохраняет файлы в `test_output/shapes_noisy`.
+В `build` лежат объектные файлы, в `bin` — готовые программы `app` и `run_tests`.
+
 Обработка своего изображения:
 
 ```sh
-./build/lab input/my_image.png output/my_image
+./bin/app test_input/my_image.png test_output/my_image
 ```
 
 Программа запускает все методы и сохраняет 7 PNG. Цветной вход автоматически
@@ -61,15 +69,16 @@ Visual Studio 2022:
 ## Содержимое
 
 - `src`, `include` — исходники и библиотеки задания;
+- `build`, `bin` — создаются при сборке;
 - `tests` — 12 тестов преподавателя и 6 дополнительных;
-- `input` — два чистых эталона и их версии с гауссовым шумом;
-- `output` — результаты обработки всех четырёх входов;
+- `test_input` — два чистых эталона и их версии с гауссовым шумом;
+- `test_output` — результаты обработки всех четырёх входов;
 - `reports/Отчет.docx`, `reports/Отчет.pdf` — один общий отчёт в двух форматах;
 - `reports/metrics.json` — измеренные MSE, PSNR и смещение яркости;
 - `tools` — воспроизведение изображений и сборка отчёта (для запуска программы не нужны).
 
 В титульном листе нужно вписать ФИО и группу. Подтверждено: 18 тестов,
-322 проверки, все пройдены; четыре демонстрационных запуска, 28 выходных PNG.
+323 проверки, все пройдены; четыре демонстрационных запуска, 28 выходных PNG.
 
 ## Подготовка иллюстраций
 

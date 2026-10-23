@@ -1,6 +1,6 @@
 build/
-test_output/
+bin/
+test_output/*.png
 __pycache__/
-
 .vs/
 *.vcxproj.user

@@ -19,11 +19,11 @@ FIG=OUT/'figures'
 FIG.mkdir(parents=True,exist_ok=True)
 metrics={}
 for name in ['shapes','detail']:
-    clean=np.asarray(Image.open(ROOT/'input'/f'{name}.png'),dtype=float)
-    noisy=np.asarray(Image.open(ROOT/'input'/f'{name}_noisy.png'),dtype=float)
+    clean=np.asarray(Image.open(ROOT/'test_input'/f'{name}.png'),dtype=float)
+    noisy=np.asarray(Image.open(ROOT/'test_input'/f'{name}_noisy.png'),dtype=float)
     methods={}
     for method in ['noisy','mean3','mean5','gauss5']:
-        image=noisy if method=='noisy' else np.asarray(Image.open(ROOT/'output'/f'{name}_noisy'/f'{method}.png'),dtype=float)
+        image=noisy if method=='noisy' else np.asarray(Image.open(ROOT/'test_output'/f'{name}_noisy'/f'{method}.png'),dtype=float)
         mse=float(np.mean((image-clean)**2))
         methods[method]={'mse':round(mse,2),'psnr':round(10*math.log10(255**2/mse),2),
                          'bias':round(float((image-clean).mean()),2)}
@@ -41,18 +41,18 @@ def montage(name,items,columns):
     path=FIG/(name+'.png')
     canvas.save(path)
     return path
-inputs=montage('inputs',[(label,ROOT/'input'/name) for label,name in [
+inputs=montage('inputs',[(label,ROOT/'test_input'/name) for label,name in [
     ('А: фигуры, оригинал','shapes.png'),('А: гауссов шум','shapes_noisy.png'),
     ('Б: детали, оригинал','detail.png'),('Б: гауссов шум','detail_noisy.png')]],2)
 edges=[]
 averages=[]
 for scene,label in [('shapes','А'),('detail','Б')]:
     for method,title in [('gray','Исходное'),('laplace','Лаплас'),('roberts','Робертс'),('sobel','Собел')]:
-        edges.append((label+': '+title,ROOT/'output'/scene/(method+'.png')))
+        edges.append((label+': '+title,ROOT/'test_output'/scene/(method+'.png')))
     for method,title in [('gray','С шумом'),('mean3','Среднее 3×3'),('mean5','Среднее 5×5'),('gauss5','Гаусс 5×5')]:
-        averages.append((label+': '+title,ROOT/'output'/(scene+'_noisy')/(method+'.png')))
+        averages.append((label+': '+title,ROOT/'test_output'/(scene+'_noisy')/(method+'.png')))
 edge_figure=montage('edges',edges,4)
-noise_edges=montage('edges_noisy',[(title,ROOT/'output'/'shapes_noisy'/(method+'.png')) for method,title in [
+noise_edges=montage('edges_noisy',[(title,ROOT/'test_output'/'shapes_noisy'/(method+'.png')) for method,title in [
     ('gray','Вход с шумом'),('laplace','Лаплас'),('roberts','Робертс'),('sobel','Собел')]],4)
 average_figure=montage('averages',averages,4)
 
@@ -124,21 +124,21 @@ p('Для арифметического усреднения все k² пик�
 eq('g(x,y) = Q((1/k²) Σ_i Σ_j f(x+i,y+j)), i,j = −r,…,r.  (6)')
 p('Гауссов фильтр сильнее учитывает соседей, расположенных ближе к центру. Веса нормируются, чтобы их сумма была равна единице и постоянная яркость сохранялась. Используется окно 5×5 при σ=1:')
 eq('v(i,j) = exp(−(i²+j²)/(2σ²)); w(i,j) = v(i,j)/Σ_i Σ_j v(i,j);\ng(x,y) = Q(Σ_i Σ_j w(i,j) f(x+i,y+j)).  (7)')
-p('Алгоритм усреднения: подготовить веса; нормировать их; пройти по всем пикселям и просуммировать взвешенные значения окна; округлить и записать результат. В функции average значение σ=0 обозначает равные веса по (6), а не подстановку нуля в (7).')
+p('Алгоритм усреднения: подготовить веса; нормировать их; пройти по всем пикселям и просуммировать взвешенные значения окна; округлить и записать результат. Функция applyBoxBlur использует равные веса по (6), а applyGaussianBlur — гауссовы веса по (7) и положительное σ.')
 p('Для сравнения результата подавления шума с чистым эталоном используются средний квадрат ошибки и PSNR. Меньшая MSE и больший PSNR означают более близкое совпадение яркостей:')
 eq('MSE = (1/(WH)) Σ_x Σ_y (g(x,y)−f(x,y))²;\nPSNR = 10 log₁₀(255²/MSE), дБ.  (8)')
 
 h('3. Программная реализация')
 p('Класс Image хранит данные в std::unique_ptr<uint8_t[]>. Конструктор копирования и присваивание создают независимый массив. Недопустимый доступ к пикселям игнорируется. Для серого входа getColor возвращает яркость в r, а g и b устанавливает в ноль. setColor сохраняет альфа-канал. Чтение и запись PNG используют библиотеки stb из задания.')
 table(['Функция или файл','Назначение'],[
-    ['grayscale','Преобразование RGB в яркость по (1).'],
-    ['edges','Выбор Лапласа, Робертса или Собела; формулы (3)–(5).'],
-    ['average','Арифметическое либо гауссово усреднение; формулы (6), (7).'],
+    ['toGrayscale','Преобразование RGB в яркость по (1).'],
+    ['applyLaplacian, applyRoberts, applySobel','Операторы Лапласа, Робертса и Собела; формулы (3)–(5).'],
+    ['applyBoxBlur, applyGaussianBlur','Арифметическое и гауссово усреднение; формулы (6), (7).'],
     ['sample и put','Повторение граничных пикселей; ограничение и округление результата.'],
-    ['main.cpp','Получение путей, запуск методов и проверка записи результатов.']])
-p('Алгоритмы находятся в Processing.cpp, а интерфейс Image.h сохранён. В main используются два аргумента: путь входного PNG и каталог результата. Один запуск создаёт семь PNG: полутоновый вход, три контурные карты и три результата усреднения. При ошибке чтения или записи выводится сообщение и возвращается код 1.')
-p('В Visual Studio открывается Lab.sln, проект Lab назначается запускаемым, затем используется Ctrl+F5. Для проверки класса и фильтров запускается проект Tests. Приложение и тесты собираются отдельно, поскольку имеют разные точки входа main.')
-p('Выполнено 18 тестовых случаев и 322 проверки, все успешно. Двенадцать случаев взяты из задания, шесть дополнительно проверяют постоянное поле, ступень яркости, импульс, параметры, присваивание и сохранение прозрачности. У ступени 0→40 проверены ответы Лапласа 40, Робертса 57 и Собела 160. У одиночного импульса 255 среднее 3×3 даёт 28, а гауссов фильтр 3×3 при σ=1 — 52.')
+    ['Source.cpp','Получение путей, запуск методов и проверка записи результатов.']])
+p('Алгоритмы находятся в Filters.cpp, а интерфейс Image.h сохранён. Точка входа main находится в Source.cpp. Без аргументов запуска используются test_input/shapes_noisy.png и test_output/shapes_noisy. Два аргумента позволяют выбрать другой входной PNG и каталог результата. Один запуск создаёт семь PNG: полутоновый вход, три контурные карты и три результата усреднения. При ошибке чтения или записи выводится сообщение и возвращается код 1.')
+p('В Visual Studio открывается Lab.sln, проект Lab назначается запускаемым, затем используется Ctrl+F5. Для проверки класса и фильтров запускается проект Tests. Исходники разделены на папки include, src и tests; подготовленные изображения лежат в test_input, результаты — в test_output. При сборке объектные файлы попадают в build, исполняемые — в bin. Приложение и тесты собираются отдельно, поскольку имеют разные точки входа main.')
+p('Выполнено 18 тестовых случаев и 323 проверки, все успешно. Двенадцать случаев взяты из задания, шесть дополнительно проверяют постоянное поле, ступень яркости, импульс, параметры, присваивание и сохранение прозрачности. У ступени 0→40 проверены ответы Лапласа 40, Робертса 57 и Собела 160. У одиночного импульса 255 среднее 3×3 даёт 28, а гауссов фильтр 3×3 при σ=1 — 52.')
 
 h('4. Тестовые изображения')
 p('Подготовлены две сцены 256×192 пикселя. Набор А содержит крупные фигуры, однородные области и участок изменения яркости. Набор Б содержит тонкие штрихи, шахматный фрагмент, окружность и диагональ. Такие изображения позволяют оценить не только сглаживание фона, но и сохранение деталей.')
@@ -172,7 +172,7 @@ p('1. Материалы задания: lab_1.pdf, image_env.pdf, ReadMe.pdf, �
 p('2. Библиотеки stb_image и stb_image_write для чтения и записи PNG из материалов задания.')
 p('3. Библиотека doctest и предоставленное тестовое окружение.')
 p('4. Справочная документация ImageMagick по добавлению гауссова шума.')
-for title,filename in [('Приложение А. Алгоритмы обработки','src/Processing.cpp'),('Приложение Б. Класс Image','src/Image.cpp')]:
+for title,filename in [('Приложение А. Алгоритмы обработки','src/Filters.cpp'),('Приложение Б. Класс Image','src/Image.cpp')]:
     h(title)
     paragraph=doc.add_paragraph()
     run=paragraph.add_run((ROOT/filename).read_text())

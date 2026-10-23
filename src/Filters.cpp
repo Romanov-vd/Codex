@@ -1,9 +1,10 @@
-#include "Processing.h"
+#include "Filters.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>
 
 namespace {
+enum class Edge { Laplace, Roberts, Sobel };
 void requireGray(const Image& image) {
     if (image.width() <= 0 || image.height() <= 0 || image.nChannels() != 1)
         throw std::invalid_argument("Expected a nonempty grayscale image");
@@ -26,8 +27,8 @@ void put(Image& image, int x, int y, double value) {
 }
 }
 
-namespace processing {
-Image grayscale(const Image& input) {
+namespace Filters {
+Image toGrayscale(const Image& input) {
     if (input.width() <= 0 || input.height() <= 0)
         throw std::invalid_argument("Empty input image");
     Image result(input.width(), input.height(), 1);
@@ -40,7 +41,7 @@ Image grayscale(const Image& input) {
     return result;
 }
 
-Image edges(const Image& gray, Edge method) {
+static Image edges(const Image& gray, Edge method) {
     requireGray(gray);
     Image result(gray.width(), gray.height(), 1);
     const int sx[3][3] = {{-1,0,1}, {-2,0,2}, {-1,0,1}};
@@ -70,7 +71,7 @@ Image edges(const Image& gray, Edge method) {
     return result;
 }
 
-Image average(const Image& gray, int window, double sigma) {
+static Image average(const Image& gray, int window, double sigma) {
     requireGray(gray);
     requireWindow(window);
     if (!std::isfinite(sigma) || sigma < 0)
@@ -95,6 +96,29 @@ Image average(const Image& gray, int window, double sigma) {
             put(result,x,y,sum);
         }
     return result;
+}
+
+
+Image applyLaplacian(const Image& source) {
+    return edges(toGrayscale(source), Edge::Laplace);
+}
+
+Image applyRoberts(const Image& source) {
+    return edges(toGrayscale(source), Edge::Roberts);
+}
+
+Image applySobel(const Image& source) {
+    return edges(toGrayscale(source), Edge::Sobel);
+}
+
+Image applyBoxBlur(const Image& source, int kernelSize) {
+    return average(toGrayscale(source), kernelSize, 0.0);
+}
+
+Image applyGaussianBlur(const Image& source, int kernelSize, double sigma) {
+    if (!std::isfinite(sigma) || sigma <= 0)
+        throw std::invalid_argument("Gaussian sigma must be finite and positive");
+    return average(toGrayscale(source), kernelSize, sigma);
 }
 
 }
