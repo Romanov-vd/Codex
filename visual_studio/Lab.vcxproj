@@ -23,7 +23,7 @@
     <IntDir>$(SolutionDir)build\vs\obj\$(ProjectName)\$(Platform)\$(Configuration)\</IntDir>
     <TargetName>app</TargetName>
     <LocalDebuggerWorkingDirectory>$(SolutionDir)</LocalDebuggerWorkingDirectory>
-    <LocalDebuggerCommandArguments>test_input\shapes_noisy.png test_output\shapes_noisy</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments></LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <ItemDefinitionGroup>

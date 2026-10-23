@@ -4,3 +4,5 @@ test_output/*.png
 __pycache__/
 .vs/
 *.vcxproj.user
+test_input/generated/
+test_output/random_*/
