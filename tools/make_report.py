@@ -8,8 +8,9 @@ import tempfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from docx import Document
-from docx.shared import Cm, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.shared import Cm, Pt, RGBColor, Twips
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
@@ -44,17 +45,20 @@ def montage(name,items,columns):
 inputs=montage('inputs',[(label,ROOT/'test_input'/name) for label,name in [
     ('А: фигуры, оригинал','shapes.png'),('А: гауссов шум','shapes_noisy.png'),
     ('Б: детали, оригинал','detail.png'),('Б: гауссов шум','detail_noisy.png')]],2)
-edges=[]
-averages=[]
-for scene,label in [('shapes','А'),('detail','Б')]:
-    for method,title in [('gray','Исходное'),('laplace','Лаплас'),('roberts','Робертс'),('sobel','Собел')]:
-        edges.append((label+': '+title,ROOT/'test_output'/scene/(method+'.png')))
-    for method,title in [('gray','С шумом'),('mean3','Среднее 3×3'),('mean5','Среднее 5×5'),('gauss5','Гаусс 5×5')]:
-        averages.append((label+': '+title,ROOT/'test_output'/(scene+'_noisy')/(method+'.png')))
-edge_figure=montage('edges',edges,4)
-noise_edges=montage('edges_noisy',[(title,ROOT/'test_output'/'shapes_noisy'/(method+'.png')) for method,title in [
-    ('gray','Вход с шумом'),('laplace','Лаплас'),('roberts','Робертс'),('sobel','Собел')]],4)
-average_figure=montage('averages',averages,4)
+contour_figures={}
+for method in ['laplace','roberts','sobel']:
+    items=[]
+    for scene,label in [('shapes','А'),('detail','Б')]:
+        items.append((label+': без шума',ROOT/'test_output'/scene/(method+'.png')))
+        items.append((label+': с шумом',ROOT/'test_output'/(scene+'_noisy')/(method+'.png')))
+    contour_figures[method]=montage(method,items,2)
+smoothing_figures={}
+for method in ['mean3','mean5','gauss5']:
+    smoothing_figures[method]=montage(method,[(label,ROOT/'test_output'/(scene+'_noisy')/(method+'.png'))
+        for scene,label in [('shapes','А: фигуры'),('detail','Б: детали')]],2)
+for old_name in ['edges.png','edges_noisy.png','averages.png']:
+    old=FIG/old_name
+    if old.exists():old.unlink()
 
 doc=Document()
 for style in doc.styles:
@@ -76,7 +80,56 @@ def p(text,center=False):
     paragraph=doc.add_paragraph(text)
     if center:paragraph.alignment=WD_ALIGN_PARAGRAPH.CENTER
     return paragraph
-def h(text):doc.add_heading(text,level=1)
+HEADINGS={
+    'Постановка задачи':('1. Постановка задачи',1),
+    'Математическое описание алгоритма':('2. Математическое описание алгоритма',1),
+    'Алгоритмы выделения контуров':('2.1. Алгоритмы выделения контуров',2),
+    'Линейные усредняющие фильтры':('2.2. Линейные усредняющие фильтры',2),
+    'Программное описание алгоритма':('3. Программное описание алгоритма',1),
+    'Результат работы программы':('4. Результат работы программы',1),
+    'Заключение':('5. Заключение',1),
+    'Приложение А':('Приложение А',1),
+    'Приложение Б':('Приложение Б',1)}
+heading_paragraphs={}
+def h(text):
+    label,level=HEADINGS[text]
+    paragraph=doc.add_heading(label,level=level)
+    index=list(HEADINGS).index(text)
+    bookmark=OxmlElement('w:bookmarkStart')
+    bookmark.set(qn('w:id'),str(100+index))
+    bookmark.set(qn('w:name'),'_LabSection'+str(index))
+    paragraph._p.insert(1,bookmark)
+    end=OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'),str(100+index))
+    paragraph._p.append(end)
+    heading_paragraphs[text]=paragraph
+    return paragraph
+contents_rows=[]
+contents_page_runs=[]
+def contents():
+    p('Содержание',True)
+    for index,(name,(label,level)) in enumerate(HEADINGS.items()):
+        paragraph=doc.add_paragraph()
+        if index==0:
+            start=OxmlElement('w:fldChar');start.set(qn('w:fldCharType'),'begin')
+            paragraph.add_run()._r.append(start)
+            instruction=OxmlElement('w:instrText')
+            instruction.set(qn('xml:space'),'preserve')
+            instruction.text=' TOC \\o "1-2" \\z \\u '
+            paragraph.add_run()._r.append(instruction)
+            separate=OxmlElement('w:fldChar');separate.set(qn('w:fldCharType'),'separate')
+            paragraph.add_run()._r.append(separate)
+        paragraph.add_run(label+'\t')
+        field=OxmlElement('w:fldSimple')
+        field.set(qn('w:instr'),'PAGEREF _LabSection'+str(index))
+        run=OxmlElement('w:r');number=OxmlElement('w:t');number.text='0'
+        run.append(number);field.append(run);paragraph._p.append(field)
+        contents_page_runs.append(number)
+        if index==len(HEADINGS)-1:
+            end=OxmlElement('w:fldChar');end.set(qn('w:fldCharType'),'end')
+            paragraph.add_run()._r.append(end)
+        contents_rows.append((name,level,paragraph))
+
 def subheading(text):
     paragraph=p(text,True)
     for run in paragraph.runs:run.bold=True
@@ -94,33 +147,37 @@ def table(headers,rows):
     for values in rows:
         for cell,value in zip(t.add_row().cells,values):cell.text=str(value)
 
-p('МИНОБРНАУКИ РОССИИ',True)
-p('Воронежский государственный университет\nФакультет прикладной математики, информатики и механики\nКафедра математического обеспечения ЭВМ',True)
-p('\n\n\n')
+p('МИНОБРНАУКИ РОССИИ\nФЕДЕРАЛЬНОЕ ГОСУДАРСТВЕННОЕ БЮДЖЕТНОЕ ОБРАЗОВАТЕЛЬНОЕ УЧРЕЖДЕНИЕ ВЫСШЕГО ОБРАЗОВАНИЯ «ВОРОНЕЖСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ» (ФГБОУ ВО «ВГУ»)',True)
+p('Факультет прикладной математики, информатики и механики\nКафедра математического обеспечения ЭВМ',True)
+p('\n\n')
 p('Цифровая обработка изображений',True)
 p('Лабораторная работа № 2',True)
 p('Выделение контуров и усредняющая фильтрация\nВарианты 1 и 2',True)
-p('\n\n\n')
-p('Выполнил(а): __________________________\nГруппа: ______________________________\nПреподаватель: Сырых А. С.')
 p('\n\n')
+p('Студент: __________________________\nГруппа: ______________________________\nПреподаватель: Сырых А. С.')
+p('\n')
 p('Воронеж, 2026',True)
 doc.add_page_break()
+contents()
 
 h('Постановка задачи')
 p('Необходимо реализовать на языке C++ обработку полутоновых изображений по двум выбранным вариантам задания.')
-p('Вариант 1 — выделение контуров с помощью операторов Лапласа, Робертса и Собела.')
-p('Вариант 2 — подавление гауссова шума пространственными усредняющими фильтрами. Зашумлённые изображения следует подготовить в графическом редакторе.')
+p('Выделение контуров на изображении с применением следующих операторов:')
+p('1. Оператор Лапласа;')
+p('2. Оператор Робертса;')
+p('3. Оператор Собела.')
+p('Подавление шума на изображениях в пространственной области усредняющими фильтрами. Для проверки используется гауссов шум, добавленный в Photoshop или другом графическом редакторе.')
 p('Перед выполнением обработки требуется завершить заданный класс Image: обеспечить чтение и сохранение PNG, доступ к пикселям, поддержку одного–четырёх каналов и независимое копирование изображений. Расширять интерфейс класса новыми методами не допускается. Работа должна сопровождаться тестовыми изображениями, которые показывают различия рассматриваемых методов.')
 
 h('Математическое описание алгоритма')
-p('Пусть f(x,y) задаёт яркость пикселя в позиции (x,y), а W и H — размеры изображения. Для восьмибитного представления допустимы значения от 0 до 255. Если исходное изображение цветное, перед обработкой вычисляется полутоновая яркость по формуле (1). Для одно- и двухканального входа используется существующий канал яркости.')
+p('Изображение рассматривается как двумерная дискретная функция f(x,y), где W и H обозначают ширину и высоту растра, а f — яркость пикселя в пределах 0–255. Цветной вход предварительно переводится в полутоновое представление по формуле (1). Для одно- и двухканального входа используется существующий канал яркости.')
 eq('f(x,y) = round(0.299R + 0.587G + 0.114B).  (1)')
 p('При обращении за пределы растра берётся ближайший допустимый пиксель. Такое продолжение сохраняет постоянный фон у границ. Каждый метод читает исходный массив и формирует отдельное выходное изображение.')
 
 h('Алгоритмы выделения контуров')
-p('Граница объекта проявляется как быстрое изменение яркости. Для её обнаружения используются дискретные приближения производных: первые разности у Робертса и Собела и вторая разность у Лапласа.')
+p('Контуры соответствуют резким локальным изменениям яркости, которые выявляются с помощью производных первого и второго порядков. В дискретном изображении они заменяются разностными приближениями.')
 subheading('Оператор Собела')
-p('В окне 3×3 рассчитываются изменения яркости по горизонтали и вертикали. Маски (2) объединяют разностную оценку с локальным сглаживанием в поперечном направлении:')
+p('Оператор вычисляет градиент яркости, одновременно выполняя локальное сглаживание поперёк направления дифференцирования. Для этого применяются две пространственные маски размера 3×3 (2):')
 eq('Sx = [−1 0 1; −2 0 2; −1 0 1];\nSy = [−1 −2 −1; 0 0 0; 1 2 1].  (2)')
 p('Компоненты градиента и его амплитуда определяются по (3). Суммирование ведётся по смещениям i,j = −1,0,1 относительно текущего пикселя:')
 eq('Gx = Σ_i Σ_j Sx[j,i] f(x+i,y+j);\nGy = Σ_i Σ_j Sy[j,i] f(x+i,y+j);\nM(x,y) = √(Gx²+Gy²).  (3)')
@@ -132,7 +189,7 @@ algorithm('Алгоритм 1. Оператор Собела',[
     'Вычислить амплитуду по (3) и подготовить значение канала по (4).',
     'Поместить значение в отдельное результирующее изображение.'])
 subheading('Оператор Робертса')
-p('Вместо окна 3×3 используются две диагонали ячейки 2×2. Соответствующие маски записываются в виде (5):')
+p('Используются диагональные конечные разности в компактном окне 2×2. Этому соответствуют две маски (5):')
 eq('Rx = [1 0; 0 −1]; Ry = [0 1; −1 0].  (5)')
 p('Из этих масок следуют две разности (6). Амплитуда получается как корень из суммы их квадратов, после чего применяется ограничение (4):')
 eq('a = f(x,y)−f(x+1,y+1);\nb = f(x+1,y)−f(x,y+1); M(x,y) = √(a²+b²).  (6)')
@@ -141,7 +198,7 @@ algorithm('Алгоритм 2. Оператор Робертса',[
     'В каждом окне 2×2 вычислить диагональные разности по (6).',
     'Найти амплитуду отклика и записать её с учётом (4).'])
 subheading('Оператор Лапласа')
-p('В непрерывном представлении Лапласиан равен сумме вторых производных по двум пространственным координатам:')
+p('Лапласиан является оператором второй пространственной производной. В непрерывной форме он определяется суммой вторых производных по координатам:')
 eq('Δf = ∂²f/∂x² + ∂²f/∂y².  (7)')
 p('В работе применяется четырёхсвязное дискретное приближение с ядром (8):')
 eq('K = [0 1 0; 1 −4 1; 0 1 0].  (8)')
@@ -153,9 +210,9 @@ algorithm('Алгоритм 3. Оператор Лапласа',[
     'Взять модуль отклика и сформировать результат по (9).'])
 
 h('Линейные усредняющие фильтры')
-p('Для уменьшения случайных колебаний яркости выходной пиксель вычисляется по его окрестности. При этом сглаживается не только шум, но и полезные изменения сигнала, поэтому выбор окна влияет на сохранность границ и мелких объектов.')
+p('Усредняющие фильтры предназначены для ослабления аддитивного гауссова шума за счёт объединения значений в окрестности пикселя. Сглаживание затрагивает и полезные перепады яркости, поэтому размер окна влияет на сохранение деталей.')
 subheading('Прямоугольный усредняющий фильтр (Box Blur)')
-p('Все значения квадратного окна имеют одинаковый вес. Для нечётного размера k радиус r=(k−1)/2, а число элементов равно k². Арифметическое усреднение описывается формулой (10):')
+p('Яркость пикселя заменяется средним арифметическим значений его окрестности размером k×k. Радиус окна r=(k−1)/2, а число элементов равно k². Вычисление выполняется по формуле (10):')
 eq('g(x,y) = Q((1/k²) Σ_i Σ_j f(x+i,y+j)), i,j = −r,…,r.  (10)')
 algorithm('Алгоритм 4. Прямоугольное усреднение',[
     'Выбрать нечётный размер окна и определить его радиус.',
@@ -163,7 +220,7 @@ algorithm('Алгоритм 4. Прямоугольное усреднение',
     'Вычислить сумму значений окрестности с этими весами по (10).',
     'Округлить результат и сохранить его в новом изображении.'])
 subheading('Фильтр Гаусса (Gaussian Blur)')
-p('В отличие от равномерного окна, здесь центральные пиксели сильнее влияют на выход. Распределение весов задаётся гауссовой функцией (11), где σ определяет пространственный масштаб сглаживания:')
+p('Весовые коэффициенты задаются двумерной гауссовой функцией (11). Параметр σ определяет масштаб сглаживания: близкие к центру элементы получают больший вес, чем удалённые.')
 eq('G(i,j) = (1/(2πσ²)) exp(−(i²+j²)/(2σ²)).  (11)')
 p('На конечном окне веса необходимо нормировать по (12). Общий множитель 1/(2πσ²) при делении сокращается, поэтому реализация вычисляет только экспоненциальную часть:')
 eq('w(i,j) = G(i,j) / Σ_i Σ_j G(i,j); Σ_i Σ_j w(i,j) = 1.  (12)')
@@ -176,7 +233,7 @@ algorithm('Алгоритм 5. Гауссово усреднение',[
     'Сформировать отдельный выходной массив с учётом (4).'])
 
 h('Программное описание алгоритма')
-p('Программа написана на C++17. Объект Image отвечает за память, PNG и доступ к пикселям. Его исходный интерфейс сохранён; алгоритмы вынесены в пространство имён Filters. Данные хранятся в std::unique_ptr<uint8_t[]>, а копирование создаёт независимый массив. Для серого входа getColor возвращает яркость в r, устанавливая g и b в ноль; setColor сохраняет альфа-канал. При недопустимых координатах доступ безопасно игнорируется.')
+p('Программная реализация выполнена на C++17. Поскольку по условию нельзя расширять класс Image, все алгоритмы обработки вынесены в пространство имён Filters. Класс Image сохраняет заданный интерфейс и отвечает за память, PNG и доступ к пикселям. Данные хранятся в std::unique_ptr<uint8_t[]>, а копирование создаёт независимый массив. Для серого входа getColor возвращает яркость в r, устанавливая g и b в ноль; setColor сохраняет альфа-канал. При недопустимых координатах доступ безопасно игнорируется.')
 p('Функция Filters::toGrayscale формирует одно яркостное изображение по (1). Полученный объект используется при обработке, а исходные данные не изменяются. Вспомогательная sample повторяет ближайший граничный пиксель, put реализует ограничение и округление по (4).')
 p('Filters::applySobel принимает изображение по константной ссылке, получает его полутоновое представление и вызывает общий внутренний расчёт edges с выбором Собела. В нём выполняется алгоритм 1: накапливаются компоненты по маскам (2), затем вычисляется амплитуда (3). Соответствующие фрагменты кода приведены в приложении А.')
 p('Filters::applyRoberts использует тот же внутренний расчёт с другим режимом. Для каждой позиции берутся две диагональные разности по (6); их амплитуда преобразуется в допустимый диапазон. Это реализация алгоритма 2, представленная в приложении А.')
@@ -188,15 +245,27 @@ p('В решении Visual Studio предусмотрены отдельные
 
 h('Результат работы программы')
 p('Для эксперимента подготовлены два полутоновых изображения размером 256×192. В наборе А присутствуют крупные фигуры, ровный фон и плавное изменение яркости. В наборе Б размещены тонкие штрихи, клетки, окружность и диагональ. Первый набор показывает изменение шума на широких областях, второй позволяет обнаружить потерю небольших деталей. Для каждой сцены сохранены чистый эталон и шумная версия.')
-figure(inputs,'Рисунок 1. Слева — чистые изображения А и Б, справа — соответствующие версии с гауссовым шумом.',15)
+figure(inputs,'Рис. 1. Слева — чистые изображения А и Б, справа — соответствующие версии с гауссовым шумом.',15)
 p('Шум добавлен вне C++-программы редактором ImageMagick с параметрами +noise Gaussian и -attenuate 0.9, с последующим сохранением в восьмибитный PNG. Начальные значения генератора равны 731 и 1201. Возможность применять другой графический редактор прямо предусмотрена вариантом 2.')
 p(f"Измеренное стандартное отклонение разности с чистым эталоном равно {metrics['shapes']['noise_std']:.2f} для А и {metrics['detail']['noise_std']:.2f} для Б. Это характеристика шума в уровнях яркости; она не совпадает по смыслу с σ=1 пространственного гауссова фильтра.")
-figure(edge_figure,'Рисунок 2. Контуры чистых сцен: сверху А, снизу Б. В каждом ряду — вход, Лаплас, Робертс и Собел.')
-p('Все три оператора реагируют на границы крупных фигур. У Лапласа после взятия модуля становятся видимыми отклики разных знаков с обеих сторон перепада, что объясняет двойную границу. Робертс даёт компактный отклик на диагональных разностях, а Собел формирует более широкий и яркий контур из-за маски 3×3 и её коэффициентов. Поэтому сравнение только по яркости линии недостаточно.')
-p('На сцене с деталями рядом расположенные границы штрихов и клеток могут сливаться. Внутри линейного градиента вторая разность близка к нулю, тогда как первые разности реагируют на плавное изменение яркости. Остаточные слабые отклики связаны в том числе с округлением значений при создании градиента.')
-figure(noise_edges,'Рисунок 3. Шумный вход А и результаты контурных операторов в том же порядке.')
-p('При обработке шумного входа появляются ложные контуры на исходно однородных участках. Случайные отклонения также являются перепадами яркости и усиливаются разностными операциями. Поперечное сглаживание Собела снижает влияние отдельных колебаний, но не устраняет его полностью. Значения выше 255 насыщаются по (4), поэтому после ограничения яркость уже не отражает точную величину производной.')
-figure(average_figure,'Рисунок 4. Подавление шума: вход, среднее 3×3, среднее 5×5 и Гаусс 5×5 с σ=1. Сверху А, снизу Б.')
+p('Тестовые изображения подобраны так, чтобы содержать:')
+for point in [
+    'мелкие детали и отчётливые границы — для проверки точности выделения контуров;',
+    'однородные области — для оценки подавления случайных колебаний яркости;',
+    'плавные переходы — для выявления искажений, возникающих при округлении.']:
+    doc.add_paragraph(point,style='List Bullet')
+p('Преимущества и ограничения методов оцениваются по результатам обработки и сопоставляются с математической моделью.')
+figure(contour_figures['laplace'],'Рис. 2. Результат действия оператора Лапласа: сверху А, снизу Б; слева чистый вход, справа шумный.',14.5)
+p('Оператор Лапласа подчёркивает перепады яркости, но сильно реагирует и на шум. После взятия модуля становятся видимыми отклики разных знаков по обе стороны границы, поэтому она может выглядеть двойной. На шумном фоне появляется множество дополнительных откликов.')
+figure(contour_figures['roberts'],'Рис. 3. Результат действия оператора Робертса в том же расположении.',14.5)
+p('Компактное окно 2×2 позволяет получить тонкие границы. Однако отсутствие предварительного сглаживания делает метод чувствительным к случайным перепадам: на однородных областях шумного входа возникают ложные контуры.')
+figure(contour_figures['sobel'],'Рис. 4. Результат действия оператора Собела в том же расположении.',14.5)
+p('Собел совмещает оценку градиента со сглаживанием в поперечном направлении. Он формирует более широкий отклик, чем Робертс, но также выделяет шумовые изменения. Яркость разных контурных карт нельзя напрямую считать мерой качества: коэффициенты масок и степень насыщения у операторов различаются.')
+p('На наборе Б близкие границы тонких штрихов и клеток могут сливаться. Внутри линейного градиента вторая разность близка к нулю, а первые разности реагируют на плавное изменение яркости. Округление значений и ограничение сильных откликов до 255 влияют на отображаемый результат.')
+figure(smoothing_figures['mean3'],'Рис. 5. Результат действия прямоугольного усредняющего фильтра 3×3: слева А, справа Б.')
+figure(smoothing_figures['mean5'],'Рис. 6. Результат действия прямоугольного усредняющего фильтра 5×5 в том же расположении.')
+figure(smoothing_figures['gauss5'],'Рис. 7. Результат действия усредняющего фильтра Гаусса 5×5, σ=1.')
+p('Линейное усреднение уменьшает гауссов шум, но сопровождается размытием контрастных границ. Гауссово окно слабее учитывает удалённые пиксели, поэтому в данном эксперименте оно лучше сохраняет переходы, чем равномерное окно 5×5. Полностью избежать потери деталей при увеличении области усреднения не удаётся.')
 p('Для измерения ошибки результаты усреднения сопоставлены с чистыми эталонами. Используются показатели (14): меньшая MSE и большая PSNR означают более точное совпадение яркостей. Контурные карты так с исходным изображением не сравниваются, поскольку представляют другой вид сигнала.')
 eq('MSE = (1/(WH)) Σ_x Σ_y (g(x,y)−f(x,y))²;\nPSNR = 10 log₁₀(255²/MSE), дБ.  (14)')
 rows=[]
@@ -209,7 +278,7 @@ p('Увеличение равномерного окна с 3×3 до 5×5 де
 p('Следовательно, результат необходимо оценивать одновременно по ровным участкам и деталям. Из трёх исследованных настроек гауссово окно 5×5 при σ=1 имеет меньшую ошибку на обеих сценах, однако это наблюдение не доказывает его превосходство при произвольных изображениях и параметрах шума.')
 
 h('Заключение')
-p('В работе выполнены два выбранных варианта: выделение контуров и пространственное подавление гауссова шума усреднением. Реализован заданный класс Image, а функции обработки отделены от хранения изображения. Четыре демонстрационных запуска сформировали 28 выходных PNG, проверка из 18 тестовых случаев завершилась успешно.')
+p('В результате достигнута цель работы: реализованы методы выделения контуров и пространственного подавления гауссова шума усредняющими фильтрами. Реализован заданный класс Image, а функции обработки отделены от хранения изображения. Четыре демонстрационных запуска сформировали 28 выходных PNG, проверка из 18 тестовых случаев завершилась успешно.')
 p('Операторы Лапласа, Робертса и Собела выявляют перепады яркости, но различаются формой отклика и реакцией на шум. Усредняющие фильтры ослабляют колебания фона ценой размытия. Большое окно не гарантирует меньшую ошибку: сохранность мелких элементов зависит от масштаба окрестности. Иллюстрации и численные оценки подтверждают эти свойства и согласуются с приведёнными формулами.')
 
 # Append only the methods relevant to each group, as in the supplied report.
@@ -232,12 +301,12 @@ def listing(text):
         run=paragraph.add_run(line)
         run.font.name='Courier New'
 h('Приложение А')
-p('Фрагменты Filters.cpp для выделения контуров. Сначала приведены общие вспомогательные функции и преобразование яркости, затем расчёт трёх операторов. Общие функции также используются листингом приложения Б. Полный проект содержит необходимые объявления и точку входа.')
+p('Реализация операторов applySobel, applyRoberts и applyLaplacian. В начале листинга приведены общие вспомогательные функции и преобразование в полутоновый вид; они также используются в приложении Б.')
 common=filters_source[:filters_source.index('namespace Filters {')]
 listing(common+'namespace Filters {\n\n'+'\n\n'.join(function_source(name) for name in [
     'toGrayscale','edges','applySobel','applyRoberts','applyLaplacian'])+'\n}\n')
 h('Приложение Б')
-p('Фрагменты Filters.cpp для усредняющих фильтров. Внутренний расчёт average используется функциями applyBoxBlur и applyGaussianBlur; toGrayscale, sample и put приведены в приложении А.')
+p('Реализация усреднения applyBoxBlur и applyGaussianBlur. Общий расчёт average использует вспомогательные функции, приведённые в приложении А.')
 listing('namespace Filters {\n\n'+'\n\n'.join(function_source(name) for name in [
     'average','applyBoxBlur','applyGaussianBlur'])+'\n}\n')
 
@@ -292,11 +361,12 @@ def apply_sample_format(document):
         is_code=any(run.font.name=='Courier New' for run in paragraph.runs)
         is_heading=paragraph.style.name.startswith('Heading')
         is_subheading=paragraph.text in {
+            'Содержание',
             'Оператор Собела','Оператор Робертса','Оператор Лапласа',
             'Прямоугольный усредняющий фильтр (Box Blur)','Фильтр Гаусса (Gaussian Blur)'}
         is_algorithm=paragraph.text.startswith('Алгоритм ')
         is_picture=bool(paragraph._p.xpath('.//w:drawing'))
-        is_caption=paragraph.text.startswith('Рисунок ')
+        is_caption=paragraph.text.startswith(('Рисунок ','Рис. '))
         is_equation=paragraph.alignment==WD_ALIGN_PARAGRAPH.CENTER and not is_heading and not is_caption and i>10
         pf.space_before=Pt(0)
         pf.space_after=Pt(0)
@@ -311,7 +381,9 @@ def apply_sample_format(document):
         # sample typography flow naturally, retaining title/appendix boundaries.
         for page_break in list(paragraph._p.xpath('.//w:br[@w:type="page"]')):
             page_break.getparent().remove(page_break)
-        pf.page_break_before=(i==11 or paragraph.text in {
+        clean_heading=__import__('re').sub(r'^\d+(?:\.\d+)*\.\s*','',paragraph.text)
+        pf.page_break_before=(i==11 or clean_heading in {
+            'Постановка задачи',
             'Математическое описание алгоритма','Программное описание алгоритма',
             'Результат работы программы','Заключение','Приложение А','Приложение Б'})
         for run in paragraph.runs:font(run,bold=is_heading or is_subheading)
@@ -330,6 +402,9 @@ def apply_sample_format(document):
             pf.first_line_indent=Twips(720) if is_caption else Twips(0)
             pf.keep_together=True
             pf.keep_with_next=is_picture
+        if paragraph.style.name=='List Bullet':
+            pf.left_indent=Twips(720)
+            pf.first_line_indent=Twips(-360)
         if is_algorithm:
             pf.first_line_indent=Twips(0)
             pf.keep_with_next=True
@@ -392,16 +467,71 @@ for i,paragraph in enumerate(doc.paragraphs):
             following=doc.paragraphs[i+1]
             if any(run.font.name=='Consolas' for run in following.runs):
                 paragraph.paragraph_format.keep_with_next=following.text.lstrip().startswith('}')
+# The reference contents uses 11 pt entries, 1.15 spacing, dot leaders and page references.
+for level in [1,2]:
+    name='TOC '+str(level)
+    try:style=doc.styles[name]
+    except KeyError:style=doc.styles.add_style(name,WD_STYLE_TYPE.PARAGRAPH)
+    style.base_style=doc.styles['Normal']
+    style.font.name='Times New Roman'
+    style.font.size=Pt(11)
+    style.font.color.rgb=RGBColor(0,0,0)
+    style.font.bold=False
+    pf=style.paragraph_format
+    pf.first_line_indent=Twips(0)
+    pf.left_indent=Twips(0)
+    pf.space_before=Pt(0)
+    pf.space_after=Pt(5)
+    pf.line_spacing=1.15
+    pf.alignment=WD_ALIGN_PARAGRAPH.LEFT
+    pf.tab_stops.add_tab_stop(Twips(9350),WD_TAB_ALIGNMENT.RIGHT,WD_TAB_LEADER.DOTS)
+for name,level,paragraph in contents_rows:
+    paragraph.style=doc.styles['TOC '+str(level)]
+    pf=paragraph.paragraph_format
+    pf.first_line_indent=Twips(0)
+    pf.left_indent=Twips(0)
+    pf.right_indent=Twips(0)
+    pf.space_before=Pt(0)
+    pf.space_after=Pt(5)
+    pf.line_spacing=1.15
+    pf.keep_with_next=False
+    pf.keep_together=True
+    pf.alignment=WD_ALIGN_PARAGRAPH.LEFT
+    pf.page_break_before=False
+    pf.tab_stops.add_tab_stop(Twips(9350),WD_TAB_ALIGNMENT.RIGHT,WD_TAB_LEADER.DOTS)
+    for run in paragraph.runs:
+        run.font.name='Times New Roman'
+        run.font.size=Pt(11)
+        run.font.bold=False
+        run.font.color.rgb=RGBColor(0,0,0)
 doc.core_properties.title='Лабораторная работа №2. Варианты 1 и 2'
 doc.core_properties.author=''
-doc.save(OUT/'Отчет.docx')
 office=shutil.which('soffice') or shutil.which('libreoffice')
 if not office:raise RuntimeError('LibreOffice is required for PDF export')
+from pypdf import PdfReader
+import re
 with tempfile.TemporaryDirectory(prefix='kg-report-') as directory:
     path=Path(directory)
-    subprocess.run([office,'-env:UserInstallation='+(path/'profile').as_uri(),'--headless',
-                    '--convert-to','pdf:writer_pdf_Export','--outdir',str(path),str(OUT/'Отчет.docx')],check=True)
-    exported=path/'Отчет.pdf'
-    if not exported.is_file():raise RuntimeError('PDF export failed')
-    shutil.copyfile(exported,OUT/'Отчет.pdf')
-print('Created the common report for variants 1 and 2.')
+    for attempt in range(3):
+        doc.save(OUT/'Отчет.docx')
+        exported=path/'Отчет.pdf'
+        if exported.exists():exported.unlink()
+        subprocess.run([office,'-env:UserInstallation='+(path/'profile').as_uri(),'--headless',
+                        '--convert-to','pdf:writer_pdf_Export','--outdir',str(path),str(OUT/'Отчет.docx')],check=True)
+        if not exported.is_file():raise RuntimeError('PDF export failed')
+        pdf=PdfReader(exported)
+        if 'Содержание' not in (pdf.pages[1].extract_text() or ''):
+            raise RuntimeError('Contents must occupy the second page after the cover')
+        pages=[]
+        for title,(label,level) in HEADINGS.items():
+            matches=[i+1 for i,page in enumerate(pdf.pages) if i>=2 and
+                     label in re.sub(r'\s+',' ',page.extract_text() or '')]
+            if not matches:raise RuntimeError('Heading missing from PDF: '+label)
+            pages.append(matches[0])
+        current=[int(run.text) for run in contents_page_runs]
+        if current==pages:
+            shutil.copyfile(exported,OUT/'Отчет.pdf')
+            break
+        for run,number in zip(contents_page_runs,pages):run.text=str(number)
+    else:raise RuntimeError('Contents page numbers did not stabilize')
+print('Created report with contents and verified page numbers: '+', '.join(map(str,pages)))
