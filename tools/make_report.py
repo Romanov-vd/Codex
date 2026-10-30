@@ -142,7 +142,10 @@ def subheading(text):
 def algorithm(title,steps):
     p(title)
     for i,step in enumerate(steps,1):p(str(i)+'. '+step)
-def eq(text):p(text,True)
+from report_equations import build_equations, add_equation, pdf_copy_with_typeset_equations
+word_equations = build_equations()
+def eq(number):
+    add_equation(doc, word_equations[number])
 def figure(path,caption,width=16.5):
     doc.add_picture(str(path),width=Cm(width))
     p(caption,True)
@@ -188,18 +191,18 @@ for task, completed in TASKS: p(task)
 
 h('Математическое описание алгоритма')
 p('Изображение рассматривается как двумерная дискретная функция f(x,y), где W и H обозначают ширину и высоту растра, а f — яркость пикселя в пределах 0–255. Цветной вход предварительно переводится в полутоновое представление по формуле (1). Для одно- и двухканального входа используется существующий канал яркости.')
-eq('f(x,y) = round(0.299R + 0.587G + 0.114B).  (1)')
+eq(1)
 p('При обращении за пределы растра берётся ближайший допустимый пиксель. Такое продолжение сохраняет постоянный фон у границ. Каждый метод читает исходный массив и формирует отдельное выходное изображение.')
 
 h('Алгоритмы выделения контуров')
 p('Контуры соответствуют резким локальным изменениям яркости, которые выявляются с помощью производных первого и второго порядков. В дискретном изображении они заменяются разностными приближениями.')
 subheading('Оператор Собела')
 p('Оператор вычисляет градиент яркости, одновременно выполняя локальное сглаживание поперёк направления дифференцирования. Для этого применяются две пространственные маски размера 3×3 (2):')
-eq('Sx = [−1 0 1; −2 0 2; −1 0 1];\nSy = [−1 −2 −1; 0 0 0; 1 2 1].  (2)')
+eq(2)
 p('Компоненты градиента и его амплитуда определяются по (3). Суммирование ведётся по смещениям i,j = −1,0,1 относительно текущего пикселя:')
-eq('Gx = Σ_i Σ_j Sx[j,i] f(x+i,y+j);\nGy = Σ_i Σ_j Sy[j,i] f(x+i,y+j);\nM(x,y) = √(Gx²+Gy²).  (3)')
+eq(3)
 p('Для записи в восьмибитный канал результат ограничивается и округляется по (4). Эта операция не является растяжением яркостей по максимуму конкретного изображения. Она также не выполняет пороговую бинаризацию:')
-eq('Q(t) = round(min(255, max(0,t))); g(x,y) = Q(M(x,y)).  (4)')
+eq(4)
 algorithm('Алгоритм 1. Оператор Собела',[
     'Получить полутоновый вход по формуле (1).',
     'Для каждого пикселя найти Gx и Gy с использованием масок (2).',
@@ -207,20 +210,20 @@ algorithm('Алгоритм 1. Оператор Собела',[
     'Поместить значение в отдельное результирующее изображение.'])
 subheading('Оператор Робертса')
 p('Используются диагональные конечные разности в компактном окне 2×2. Этому соответствуют две маски (5):')
-eq('Rx = [1 0; 0 −1]; Ry = [0 1; −1 0].  (5)')
+eq(5)
 p('Из этих масок следуют две разности (6). Амплитуда получается как корень из суммы их квадратов, после чего применяется ограничение (4):')
-eq('a = f(x,y)−f(x+1,y+1);\nb = f(x+1,y)−f(x,y+1); M(x,y) = √(a²+b²).  (6)')
+eq(6)
 algorithm('Алгоритм 2. Оператор Робертса',[
     'Сформировать яркостное изображение по (1).',
     'В каждом окне 2×2 вычислить диагональные разности по (6).',
     'Найти амплитуду отклика и записать её с учётом (4).'])
 subheading('Оператор Лапласа')
 p('Лапласиан является оператором второй пространственной производной. В непрерывной форме он определяется суммой вторых производных по координатам:')
-eq('Δf = ∂²f/∂x² + ∂²f/∂y².  (7)')
+eq(7)
 p('В работе применяется четырёхсвязное дискретное приближение с ядром (8):')
-eq('K = [0 1 0; 1 −4 1; 0 1 0].  (8)')
+eq(8)
 p('Поскольку вторая разность может иметь любой знак, для отображения используется её модуль. Формула расчёта приведена в (9):')
-eq('L = f(x−1,y)+f(x+1,y)+f(x,y−1)+f(x,y+1)−4f(x,y);\ng(x,y) = Q(|L|).  (9)')
+eq(9)
 algorithm('Алгоритм 3. Оператор Лапласа',[
     'Преобразовать вход в полутоновое представление по (1).',
     'Вычислить вторую разность с использованием маски (8).',
@@ -230,7 +233,7 @@ h('Линейные усредняющие фильтры')
 p('Усредняющие фильтры предназначены для ослабления аддитивного гауссова шума за счёт объединения значений в окрестности пикселя. Сглаживание затрагивает и полезные перепады яркости, поэтому размер окна влияет на сохранение деталей.')
 subheading('Прямоугольный усредняющий фильтр (Box Blur)')
 p('Яркость пикселя заменяется средним арифметическим значений его окрестности размером k×k. Радиус окна r=(k−1)/2, а число элементов равно k². Вычисление выполняется по формуле (10):')
-eq('g(x,y) = Q((1/k²) Σ_i Σ_j f(x+i,y+j)), i,j = −r,…,r.  (10)')
+eq(10)
 algorithm('Алгоритм 4. Прямоугольное усреднение',[
     'Выбрать нечётный размер окна и определить его радиус.',
     'Присвоить каждому из k² элементов вес 1/k².',
@@ -238,11 +241,11 @@ algorithm('Алгоритм 4. Прямоугольное усреднение',
     'Округлить результат и сохранить его в новом изображении.'])
 subheading('Фильтр Гаусса (Gaussian Blur)')
 p('Весовые коэффициенты задаются двумерной гауссовой функцией (11). Параметр σ определяет масштаб сглаживания: близкие к центру элементы получают больший вес, чем удалённые.')
-eq('G(i,j) = (1/(2πσ²)) exp(−(i²+j²)/(2σ²)).  (11)')
+eq(11)
 p('На конечном окне веса необходимо нормировать по (12). Общий множитель 1/(2πσ²) при делении сокращается, поэтому реализация вычисляет только экспоненциальную часть:')
-eq('w(i,j) = G(i,j) / Σ_i Σ_j G(i,j); Σ_i Σ_j w(i,j) = 1.  (12)')
+eq(12)
 p('После подготовки ядра выход определяется взвешенной суммой (13):')
-eq('g(x,y) = Q(Σ_i Σ_j w(i,j) f(x+i,y+j)).  (13)')
+eq(13)
 algorithm('Алгоритм 5. Гауссово усреднение',[
     'Задать размер окна k и положительное значение σ.',
     'Определить веса по (11) и нормировать их согласно (12).',
@@ -253,13 +256,13 @@ h('Порядковые фильтры')
 p('Для каждого пикселя собираются k² яркостей нечётного окна. Порядковый фильтр выбирает одно из этих значений, а не вычисляет их среднее. Используются окна 3×3 и 5×5.')
 subheading('Медианный фильтр')
 p('Медиана — средний элемент упорядоченной выборки. Для девяти значений берётся пятое, для двадцати пяти — тринадцатое. Обозначим отсортированные значения v₀,…,vₖ²₋₁:')
-eq('g(x,y) = v[(k²−1)/2].  (14)')
+eq(14)
 subheading('Фильтр минимума')
 p('Выбирается наименьшая яркость окна. Тёмные области расширяются, светлые сужаются:')
-eq('g(x,y) = min f(x+i,y+j), i,j = −r,…,r.  (15)')
+eq(15)
 subheading('Фильтр максимума')
 p('Выбирается наибольшая яркость окна. Светлые области расширяются, тёмные сужаются:')
-eq('g(x,y) = max f(x+i,y+j), i,j = −r,…,r.  (16)')
+eq(16)
 algorithm('Алгоритм 6. Порядковая фильтрация',[
     'Проверить вход и нечётный размер окна от 1 до 31.',
     'Для каждого пикселя собрать значения окна, повторяя край при выходе за изображение.',
@@ -303,7 +306,7 @@ figure(smoothing_figures['mean5'],'Рис. 6. Результат действи�
 figure(smoothing_figures['gauss5'],'Рис. 7. Результат действия усредняющего фильтра Гаусса 5×5, σ=1.')
 p('Линейное усреднение уменьшает гауссов шум, но сопровождается размытием контрастных границ. Гауссово окно слабее учитывает удалённые пиксели, поэтому в данном эксперименте оно лучше сохраняет переходы, чем равномерное окно 5×5. Полностью избежать потери деталей при увеличении области усреднения не удаётся.')
 p('Для измерения ошибки результаты усреднения сопоставлены с чистыми эталонами. Используются показатели (17): меньшая MSE и большая PSNR означают более точное совпадение яркостей. Контурные карты так с исходным изображением не сравниваются, поскольку представляют другой вид сигнала.')
-eq('MSE = (1/(WH)) Σ_x Σ_y (g(x,y)−f(x,y))²;\nPSNR = 10 log₁₀(255²/MSE), дБ.  (17)')
+eq(17)
 rows=[]
 for key,title in [('noisy','Шумный вход'),('mean3','Среднее 3×3'),('mean5','Среднее 5×5'),('gauss5','Гаусс 5×5')]:
     a=metrics['shapes']['methods'][key];b=metrics['detail']['methods'][key]
@@ -421,7 +424,7 @@ def apply_sample_format(document):
         is_algorithm=paragraph.text.startswith('Алгоритм ')
         is_picture=bool(paragraph._p.xpath('.//w:drawing'))
         is_caption=paragraph.text.startswith(('Рисунок ','Рис. '))
-        is_equation=paragraph.alignment==WD_ALIGN_PARAGRAPH.CENTER and not is_heading and not is_caption and i>10
+        is_equation=bool(paragraph._p.xpath(".//m:oMathPara"))
         pf.space_before=Pt(0)
         pf.space_after=Pt(0)
         pf.line_spacing=1.5
@@ -463,7 +466,7 @@ def apply_sample_format(document):
             pf.first_line_indent=Twips(0)
             pf.keep_with_next=True
             for run in paragraph.runs:run.font.italic=True
-        if not paragraph.text and not is_picture:
+        if not paragraph.text and not is_picture and not is_equation:
             pf.line_spacing=Pt(1)
             pf.line_spacing_rule=WD_LINE_SPACING.EXACTLY
             for run in paragraph.runs:font(run,size=1)
@@ -513,6 +516,10 @@ def apply_sample_format(document):
             for run in paragraph.runs:font(run)
 
 apply_sample_format(doc)
+# Keep the sentence introducing each formula on the same page as the formula.
+for index, paragraph in enumerate(doc.paragraphs):
+    if paragraph._p.xpath('.//m:oMathPara') and index:
+        doc.paragraphs[index-1].paragraph_format.keep_with_next = True
 # Keep wrapped code statements together and attach closing braces to their body.
 for i,paragraph in enumerate(doc.paragraphs):
     if any(run.font.name=='Consolas' for run in paragraph.runs):
@@ -566,12 +573,18 @@ from pypdf import PdfReader
 import re
 with tempfile.TemporaryDirectory(prefix='kg-report-') as directory:
     path=Path(directory)
+    export_doc = pdf_copy_with_typeset_equations(doc, path)
+    export_path = path / "export"
+    export_path.mkdir()
     for attempt in range(3):
         doc.save(OUT/'Отчет.docx')
+        for native, rendered in zip(contents_page_runs, export_doc.element.xpath('//w:fldSimple[starts-with(@w:instr,"PAGEREF")]/w:r/w:t')):
+            rendered.text = native.text
+        export_doc.save(export_path/'Отчет.docx')
         exported=path/'Отчет.pdf'
         if exported.exists():exported.unlink()
         subprocess.run([office,'-env:UserInstallation='+(path/'profile').as_uri(),'--headless',
-                        '--convert-to','pdf:writer_pdf_Export','--outdir',str(path),str(OUT/'Отчет.docx')],check=True)
+                        '--convert-to','pdf:writer_pdf_Export','--outdir',str(path),str(export_path/'Отчет.docx')],check=True)
         if not exported.is_file():raise RuntimeError('PDF export failed')
         pdf=PdfReader(exported)
         if 'Содержание' not in (pdf.pages[1].extract_text() or ''):

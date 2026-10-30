@@ -116,7 +116,10 @@ Times New Roman 14, без гиперссылок. На титульном ли�
 
 Скрипты оформления не нужны для сборки C++. Для их запуска нужны Python 3,
 Pillow, NumPy, python-docx, pypdf; для изображений — ImageMagick,
-для PDF — LibreOffice, шрифты Times New Roman и Consolas.
+для формул Word — Pandoc, для PDF — LibreOffice, TeX Live (pdflatex, amsmath, preview) и Poppler (pdftoppm), шрифты Times New Roman и Consolas.
+Формулы сохранены как редактируемые уравнения Word со шрифтом Cambria Math.
+Для PDF те же формулы набираются TeX и вставляются с разрешением 450 dpi:
+это обходит ошибку отображения скобок OMML при экспорте LibreOffice.
 
 ```sh
 python3 tools/prepare_images.py
