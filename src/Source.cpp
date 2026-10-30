@@ -3,6 +3,9 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <vector>
 #include <limits>
 #include <random>
 
@@ -78,32 +81,62 @@ unsigned readSeed(const std::string& text) {
     return static_cast<unsigned>(value);
 }
 
-void runFilters(const fs::path& input, const fs::path& directory) {
-    const Image source = Filters::toGrayscale(Image(input.string()));
+void runFilters(const fs::path& input, const fs::path& directory, const fs::path& reference) {
+    const Image source = Filters::convertToGrayscale(Image(input.string()));
+    Image clean;
+    if (!reference.empty()) {
+        clean = Filters::convertToGrayscale(Image(reference.string()));
+        if (clean.width() != source.width() || clean.height() != source.height())
+            throw std::invalid_argument("Reference and input sizes differ");
+    }
     fs::create_directories(directory);
-    auto save = [&](const Image& image, const char* name) {
-        saveImage(image, directory / name);
-    };
+    // Без эталона не оставляем метрики от предыдущего запуска.
+    if (reference.empty()) fs::remove(directory / "metrics.csv");
     std::cout << "\nВход: " << input.string()
               << "\nРазмер: " << source.width() << " x " << source.height() << " пикселей\n";
-    save(source, "gray.png");
-    std::cout << "\n[1] Выделение контуров\n";
-    save(Filters::applyLaplacian(source), "laplace.png");
-    save(Filters::applyRoberts(source), "roberts.png");
-    save(Filters::applySobel(source), "sobel.png");
-    std::cout << "    Лаплас, Робертс, Собел — готово.\n";
-    std::cout << "\n[2] Усредняющие фильтры\n";
-    save(Filters::applyBoxBlur(source, 3), "mean3.png");
-    save(Filters::applyBoxBlur(source, 5), "mean5.png");
-    save(Filters::applyGaussianBlur(source, 5, 1.0), "gauss5.png");
-    std::cout << "    Среднее 3x3, среднее 5x5, Гаусс 5x5 — готово.\n"
-              << "\nСохранено 7 PNG в " << directory.string() << "\n";
+    saveImage(source, directory / "grayscale.png");
+    std::cout << "\n[1] Контуры: Лаплас, Робертс, Собел\n";
+    saveImage(Filters::laplaceEdges(source), directory / "laplace_edges.png");
+    saveImage(Filters::robertsEdges(source), directory / "roberts_edges.png");
+    saveImage(Filters::sobelEdges(source), directory / "sobel_edges.png");
+
+    // Названия результатов совпадают с названиями методов в отчёте.
+    std::vector<std::pair<std::string, Image>> results;
+    std::cout << "[2] Усреднение: среднее 3x3, 5x5; Гаусс 5x5, sigma=1\n";
+    results.emplace_back("mean_3x3", Filters::meanFilter(source, 3));
+    results.emplace_back("mean_5x5", Filters::meanFilter(source, 5));
+    results.emplace_back("gaussian_5x5", Filters::gaussianFilter(source, 5, 1.0));
+    std::cout << "[3] Порядковые фильтры: медиана, минимум, максимум 3x3 и 5x5\n";
+    for (int size : {3, 5}) {
+        const std::string suffix = "_" + std::to_string(size) + "x" + std::to_string(size);
+        results.emplace_back("median" + suffix, Filters::medianFilter(source, size));
+        results.emplace_back("minimum" + suffix, Filters::minimumFilter(source, size));
+        results.emplace_back("maximum" + suffix, Filters::maximumFilter(source, size));
+    }
+    for (const auto& result : results)
+        saveImage(result.second, directory / (result.first + ".png"));
+    std::cout << "Сохранено 13 PNG в " << directory.string() << "\n";
+
+    if (!reference.empty()) {
+        std::ofstream csv(directory / "metrics.csv");
+        if (!csv) throw std::runtime_error("Cannot save metrics.csv");
+        csv << "method,mse,psnr_db\n" << std::fixed << std::setprecision(5);
+        auto measure = [&](const std::string& name, const Image& image) {
+            csv << name << ',' << Filters::calculateMSE(clean, image) << ','
+                << Filters::calculatePSNR(clean, image) << '\n';
+        };
+        measure("noisy_input", source);
+        for (const auto& result : results) measure(result.first, result.second);
+        csv.close();
+        if (!csv) throw std::runtime_error("Cannot finish writing metrics.csv");
+        std::cout << "MSE и PSNR сохранены в metrics.csv\n";
+    }
 }
 
 void usage(std::ostream& stream) {
     stream << "Запуск из папки с Lab.sln:\n"
            << "  app                          — готовый пример\n"
-           << "  app input.png output_folder  — своё изображение\n"
+           << "  app input.png output_folder [clean.png] — свой вход и необязательный эталон\n"
            << "  app --random [seed]          — дополнительный случайный тест\n"
            << "  app --help                   — справка\n";
 }
@@ -114,33 +147,37 @@ int main(int argc, char** argv) {
     SetConsoleOutputCP(CP_UTF8);
 #endif
     try {
-        std::cout << "Лабораторная работа №2 | Варианты 1 и 2\n";
+        std::cout << "Лабораторная работа №2 | Варианты 1, 2 и 3\n";
         const std::string option = argc > 1 ? argv[1] : "";
         if (argc == 2 && option == "--help") {
             usage(std::cout);
             return 0;
         }
-        fs::path input, output;
+        fs::path input, output, reference;
         if (option == "--random" && (argc == 2 || argc == 3)) {
             const unsigned seed = argc == 3 ? readSeed(argv[2]) : 2026;
             input = generateRandomTest(seed);
             output = "test_output/random_" + std::to_string(seed);
+            reference = input.parent_path() / "clean.png";
         } else if (argc == 1) {
             input = "test_input/shapes_noisy.png";
             output = "test_output/shapes_noisy";
+            if (fs::exists("test_input/shapes.png")) reference = "test_input/shapes.png";
             if (!fs::exists(input)) {
                 std::cout << "Готовый пример не найден. Создаётся дополнительный случайный тест.\n";
                 input = generateRandomTest(2026);
                 output = "test_output/random_2026";
+                reference = input.parent_path() / "clean.png";
             }
-        } else if (argc == 3 && option.rfind("--", 0) != 0) {
+        } else if ((argc == 3 || argc == 4) && option.rfind("--", 0) != 0) {
             input = argv[1];
             output = argv[2];
+            if (argc == 4) reference = argv[3];
         } else {
             usage(std::cerr);
             return 1;
         }
-        runFilters(input, output);
+        runFilters(input, output, reference);
     } catch (const std::exception& error) {
         std::cerr << "Ошибка: " << error.what() << '\n';
         return 1;

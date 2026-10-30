@@ -3,13 +3,22 @@
 
 namespace Filters {
 // Вариант 1: выделение контуров.
-Image applyLaplacian(const Image& source);
-Image applyRoberts(const Image& source);
-Image applySobel(const Image& source);
+Image laplaceEdges(const Image& source);
+Image robertsEdges(const Image& source);
+Image sobelEdges(const Image& source);
 
 // Вариант 2: усредняющие фильтры.
-Image applyBoxBlur(const Image& source, int kernelSize = 3);
-Image applyGaussianBlur(const Image& source, int kernelSize = 3, double sigma = 1.0);
+Image meanFilter(const Image& source, int windowSize = 3);
+Image gaussianFilter(const Image& source, int windowSize = 3, double sigma = 1.0);
 
-Image toGrayscale(const Image& source);
+// Вариант 3: выбор среднего, наименьшего или наибольшего элемента окна.
+Image medianFilter(const Image& source, int windowSize = 3);
+Image minimumFilter(const Image& source, int windowSize = 3);
+Image maximumFilter(const Image& source, int windowSize = 3);
+
+// Сравнение результата с чистым эталоном.
+double calculateMSE(const Image& reference, const Image& result);
+double calculatePSNR(const Image& reference, const Image& result);
+
+Image convertToGrayscale(const Image& source);
 }

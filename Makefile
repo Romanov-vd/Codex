@@ -37,9 +37,9 @@ run-test: $(BIN_DIR)/run_tests
 
 demo: $(BIN_DIR)/app
 	./$(BIN_DIR)/app test_input/shapes.png test_output/shapes
-	./$(BIN_DIR)/app test_input/shapes_noisy.png test_output/shapes_noisy
+	./$(BIN_DIR)/app test_input/shapes_noisy.png test_output/shapes_noisy test_input/shapes.png
 	./$(BIN_DIR)/app test_input/detail.png test_output/detail
-	./$(BIN_DIR)/app test_input/detail_noisy.png test_output/detail_noisy
+	./$(BIN_DIR)/app test_input/detail_noisy.png test_output/detail_noisy test_input/detail.png
 
 clean:
 	rm -rf $(BUILD_DIR) $(BIN_DIR)

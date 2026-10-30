@@ -4,6 +4,7 @@
 #include "stb_image_write.h"
 #include "Image.h"
 #include <cstring>
+#include <algorithm>
 #include <limits>
 
 Image::Image() = default;
@@ -58,7 +59,11 @@ bool Image::isRead(const std::string& filepath) {
     if (!raw) return false;
     Image loaded(w, h, channels);
     std::memcpy(loaded.m_data.get(), raw.get(), loaded.m_size);
-    *this = loaded;
+    m_width = loaded.m_width;
+    m_height = loaded.m_height;
+    m_nChannels = loaded.m_nChannels;
+    m_size = loaded.m_size;
+    m_data = std::move(loaded.m_data);
     return true;
 }
 
@@ -71,10 +76,10 @@ bool Image::isWrite(const std::string& filepath) const {
 void Image::setColor(int x, int y, int r, int g, int b) {
     if (!m_data || x < 0 || y < 0 || x >= m_width || y >= m_height) return;
     const size_t i = (static_cast<size_t>(y) * m_width + x) * m_nChannels;
-    m_data[i] = static_cast<uint8_t>(r);
+    m_data[i] = static_cast<uint8_t>(std::clamp(r, 0, 255));
     if (m_nChannels >= 3) {
-        m_data[i + 1] = static_cast<uint8_t>(g);
-        m_data[i + 2] = static_cast<uint8_t>(b);
+        m_data[i + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
+        m_data[i + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
     }
     // Alpha is not an argument of setColor and is therefore preserved.
 }
