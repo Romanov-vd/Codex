@@ -9,7 +9,9 @@ const setup='window.CLINIC_LOCAL_DEMO=true;window.CLINIC_LOCAL_CATALOG='+JSON.st
 html=html.replace(/<script[^>]*src="[^\"]+"[^>]*><\/script>/,'').replace(/<link[^>]*rel="stylesheet"[^>]*>/,'');
 html=html.replace(/<link[^>]*rel="icon"[^>]*>/,'<link rel="icon" type="image/svg+xml" href="'+ 'data:image/svg+xml;base64,'+(await readFile('public/favicon.svg')).toString('base64')+'">');
 html=html.replace('</head>','<style>'+css+'</style></head>');
-const script=value=>'<script>'+value.replace(/<\/script/gi,'<\\/script')+'</script>';
+// HTML Preview rewrites every literal <script token, even inside JS strings.
+// Encode tag openings in the payload without changing their runtime value.
+const script=value=>'<script>'+value.replace(/<\/?script\b/gi,tag=>'\\x3c'+tag.slice(1))+'</script>';
 html=html.replace('</body>',script(setup)+script(js)+'</body>');
 html=html.replace('<title>Линия — забота, которая рядом</title>','<title>Линия — локальная демонстрация</title>');
 await mkdir('standalone',{recursive:true});await writeFile('standalone/liniya-clinic.html',html.replace(/[ \t]+$/gm,''));console.log('Created standalone/liniya-clinic.html ('+Buffer.byteLength(html)+' bytes): scripts, styles, illustrations and local database adapter embedded.');

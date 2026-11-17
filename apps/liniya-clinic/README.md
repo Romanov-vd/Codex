@@ -7,9 +7,9 @@ PostgreSQL для публикации на Vercel и постоянная SQLit
 ## Открыть прямо сейчас — без установки
 
 - [Интерактивный предпросмотр](https://htmlpreview.github.io/?https://github.com/Romanov-vd/Codex/blob/main/deliverables/liniya-clinic.html)
-- [Скачать сайт одним HTML-файлом](https://github.com/Romanov-vd/Codex/raw/refs/heads/main/deliverables/liniya-clinic.html)
+- [Скачать автономную версию в ZIP](https://github.com/Romanov-vd/Codex/raw/refs/heads/main/deliverables/liniya-clinic-local.zip)
 
-Для автономного запуска скачайте HTML и откройте его в Chrome или Edge двойным щелчком.
+Для автономного запуска скачайте ZIP, извлеките из него `liniya-clinic.html` и откройте этот файл в Chrome или Edge двойным щелчком.
 Установка Node.js и запуск сервера для этого файла не требуются. Стили, скрипты и все
 иллюстрации встроены в файл. Проверены регистрация, запись, перенос, отмена,
 календарь, заявки и панель администратора при отключённой сети.
@@ -183,3 +183,5 @@ ICS, перенос, редактирование профиля, вход из 
 ![Главная страница](docs/preview-desktop.png)
 
 [Мобильная версия](docs/preview-mobile.png)
+
+HTML Preview: сборка экранирует строковые HTML-теги внутри JavaScript, чтобы загрузчик предпросмотра не повреждал код React. Тест автономной версии проверяет синтаксис после соответствующего преобразования; полный сценарий дополнительно проверен через оригинальный загрузчик HTML Preview.

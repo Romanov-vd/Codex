@@ -2,16 +2,31 @@ import{chromium}from'playwright';
 import http from'node:http';
 import{readFile}from'node:fs/promises';
 import assert from'node:assert/strict';
+import {Script} from 'node:vm';
 import{dayAfter}from'../server/catalog.mjs';
 const html=await readFile('standalone/liniya-clinic.html');
-const server=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html);});
+// Regression: HTML Preview rewrites literal script tags even inside JS strings.
+// Mirror that transform and compile every resulting inline script before launching.
+const transformed=html.toString().replace(/<script(\s*src=["'][^"']*["'])?(\s*type=["'](text|application)\/javascript["'])?/gi,'<script type="text/htmlpreview"$1');
+const payloads=[...transformed.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
+assert.equal(payloads.length,2);
+for(const [,source] of payloads)new Script(source);
+const previewLoader=process.env.CLINIC_HTMLPREVIEW_LOADER?await readFile(process.env.CLINIC_HTMLPREVIEW_LOADER):null;
+const previewIndex=process.env.CLINIC_HTMLPREVIEW_INDEX?await readFile(process.env.CLINIC_HTMLPREVIEW_INDEX):null;
+const sourceURL='https://raw.githubusercontent.com/Romanov-vd/Codex/main/deliverables/liniya-clinic.html';
+const server=http.createServer((req,res)=>{
+ const isLoader=previewLoader&&req.url.startsWith('/htmlpreview.js');
+ res.setHeader('Content-Type',isLoader?'application/javascript':'text/html; charset=utf-8');
+ res.end(isLoader?previewLoader:(previewIndex||html));
+});
 await new Promise(r=>server.listen(0,'127.0.0.1',r));const origin='http://127.0.0.1:'+server.address().port;
 let browser;
 try{
  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||undefined,args:['--no-sandbox']});
  const context=await browser.newContext({viewport:{width:1440,height:1000}}),page=await context.newPage();const errors=[],apiRequests=[],remoteRequests=[];
- page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().includes('/api/'))apiRequests.push(r.url());if(/^https?:/.test(r.url())&&!r.url().startsWith(origin))remoteRequests.push(r.url());});
- await page.goto(origin);await page.getByRole('heading',{name:'Ваше здоровье. Наше внимание.'}).waitFor();
+ page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().includes('/api/'))apiRequests.push(r.url());if(/^https?:/.test(r.url())&&!r.url().startsWith(origin)&&r.url()!==sourceURL)remoteRequests.push(r.url());});
+ if(previewLoader)await page.route(sourceURL,route=>route.fulfill({body:html,contentType:'text/plain',headers:{'Access-Control-Allow-Origin':'*'}}));
+ await page.goto(origin+(previewLoader?'/?'+sourceURL:''));await page.getByRole('heading',{name:'Ваше здоровье. Наше внимание.'}).waitFor();
  assert.match(await page.locator('.topline').innerText(),/Локальное демо/);
  await context.setOffline(true);
  await page.getByRole('button',{name:'Записаться на приём',exact:true}).click();let booking=page.getByRole('dialog',{name:'Найдём удобное время'});await booking.getByRole('button',{name:'Выбрать дату'}).click();
@@ -30,5 +45,5 @@ try{
  await page.locator('.brand').first().click();assert.equal(new URL(page.url()).hash,'#/');
  for(const width of[320,390,768,1440]){await page.setViewportSize({width,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'overflow at '+width);}
  assert.deepEqual(apiRequests,[]);assert.deepEqual(remoteRequests,[]);assert.deepEqual(errors,[]);
- console.log('PASS: standalone HTML; no API/network requests; registration, booking, reschedule, cancellation, callback and admin work offline; IndexedDB persists after reload; hash routes and responsive layouts verified.');
+ console.log('PASS: '+(previewLoader?'original HTML Preview loader; ':'standalone HTML; ')+ ' no API/network requests; registration, booking, reschedule, cancellation, callback and admin work offline; IndexedDB persists after reload; hash routes and responsive layouts verified.');
 }finally{if(browser)await browser.close();await new Promise(r=>server.close(r));}
