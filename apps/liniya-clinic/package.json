@@ -12,7 +12,9 @@
     "start": "node server/start.mjs",
     "test": "node --test tests/api.test.mjs tests/production.test.mjs",
     "test:browser": "node tests/browser.mjs",
-    "check": "npm test && npm run build"
+    "check": "npm test && npm run build",
+    "build:standalone": "npm run build && node scripts/standalone.mjs",
+    "test:standalone": "node tests/standalone.mjs"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

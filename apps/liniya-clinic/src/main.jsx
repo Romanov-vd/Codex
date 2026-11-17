@@ -45,6 +45,9 @@ const icons = {
   ScanLine,
   ShieldCheck,
 };
+const localDemo = Boolean(window.CLINIC_LOCAL_DEMO);
+const currentRoute = () => localDemo ? (location.hash.slice(1) || '/') : location.pathname;
+const imagePath = (name) => localDemo ? window.CLINIC_LOCAL_IMAGES[name] : '/images/' + name;
 const money = (n) => new Intl.NumberFormat("ru-RU").format(n) + " ₽";
 const shortDate = (value) =>
   new Intl.DateTimeFormat("ru-RU", {
@@ -73,7 +76,7 @@ const dayValue = (offset) =>
     day: "2-digit",
   }).format(new Date(Date.now() + offset * 86400000));
 async function api(path, options = {}) {
-  const res = await fetch("/api/" + path, {
+  const res = localDemo ? await window.clinicLocalAPI(path, options) : await fetch("/api/" + path, {
     credentials: "same-origin",
     ...options,
     headers: {
@@ -99,7 +102,7 @@ async function api(path, options = {}) {
 function Link({ to, children, className = "", onClick, ...props }) {
   return (
     <a
-      href={to}
+      href={localDemo ? "#" + to : to}
       className={className}
       onClick={(e) => {
         onClick?.(e);
@@ -112,8 +115,11 @@ function Link({ to, children, className = "", onClick, ...props }) {
         )
           return;
         e.preventDefault();
-        history.pushState({}, "", to);
-        window.dispatchEvent(new PopStateEvent("popstate"));
+        if (localDemo) location.hash = to;
+        else {
+          history.pushState({}, "", to);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
         window.scrollTo({ top: 0 });
       }}
       {...props}
@@ -123,11 +129,12 @@ function Link({ to, children, className = "", onClick, ...props }) {
   );
 }
 function useRoute() {
-  const [path, setPath] = useState(location.pathname);
+  const [path, setPath] = useState(currentRoute());
   useEffect(() => {
-    const listener = () => setPath(location.pathname);
+    const listener = () => setPath(currentRoute());
     window.addEventListener("popstate", listener);
-    return () => window.removeEventListener("popstate", listener);
+    window.addEventListener("hashchange", listener);
+    return () => {window.removeEventListener("popstate", listener);window.removeEventListener("hashchange", listener);};
   }, []);
   return path;
 }
@@ -230,7 +237,7 @@ function DoctorCard({ doctor, onBook, onDetails }) {
         style={{ background: doctor.color }}
       >
         <img
-          src={"/images/" + doctor.portrait + ".svg"}
+          src={imagePath(doctor.portrait + ".svg")}
           alt={"Иллюстрация специалиста: " + doctor.name}
           loading="lazy"
         />
@@ -337,7 +344,7 @@ function Home({ catalog, onBook, onDoctor }) {
           <div className="hero-trust">
             <div className="mini-avatars">
               {catalog.doctors.slice(0, 3).map((d) => (
-                <img key={d.id} src={"/images/" + d.portrait + ".svg"} alt="" />
+                <img key={d.id} src={imagePath(d.portrait + ".svg")} alt="" />
               ))}
             </div>
             <div>
@@ -349,7 +356,7 @@ function Home({ catalog, onBook, onDoctor }) {
         <div className="hero-art">
           <img
             className="hero-illustration"
-            src="/images/hero.svg"
+            src={imagePath("hero.svg")}
             alt="Иллюстрация: врач на консультации в светлой клинике"
           />
           <div className="hero-float">
@@ -954,7 +961,7 @@ function BookingModal({ initial, catalog, user, onAuth, onClose, onSaved }) {
           </label>
           {doctor && (
             <div className="mini-doctor">
-              <img src={"/images/" + doctor.portrait + ".svg"} alt="" />
+              <img src={imagePath(doctor.portrait + ".svg")} alt="" />
               <div>
                 <strong>{doctor.name}</strong>
                 <span>
@@ -1824,16 +1831,13 @@ function App() {
   ];
   return (
     <>
-      <a className="skip-link" href="#main-content">
+      <a className="skip-link" href="#main-content" onClick={e=>{if(localDemo){e.preventDefault();document.getElementById("main-content").scrollIntoView();}}}>
         К содержимому
       </a>
       <div className="topline">
         <div className="container">
-          <span>Демонстрационная клиника · тестовая запись</span>
-          <span className="topline-hours">
-            <Clock3 size={13} />
-            Пн–сб, 09:00–18:00
-          </span>
+          <span>{localDemo ? "Локальное демо · данные в этом браузере" : "Демонстрационная клиника · тестовая запись"}</span>
+          {localDemo ? <button className="text-button local-help" onClick={() => setPrivacy(true)}>Как попробовать</button> : <span className="topline-hours"><Clock3 size={13}/>Пн–сб, 09:00–18:00</span>}
         </div>
       </div>
       <header className="header">
@@ -2027,7 +2031,7 @@ function App() {
         >
           <div className="doctor-detail">
             <img
-              src={"/images/" + detail.portrait + ".svg"}
+              src={imagePath(detail.portrait + ".svg")}
               alt="Иллюстрация специалиста"
             />
             <div>
@@ -2087,6 +2091,12 @@ function App() {
       )}
       {privacy && (
         <Dialog title="О ваших данных" onClose={() => setPrivacy(false)}>
+          {localDemo ? <div className="privacy-copy">
+            <p><strong>Это автономная демонстрация.</strong> Сайт открывается без сервера и интернета. Аккаунты, записи и заявки хранятся в IndexedDB этого браузера и не синхронизируются с другими устройствами.</p>
+            <p>Для проверки зарегистрируйтесь с тестовыми данными, выберите врача и время, подтвердите запись. В кабинете можно перенести или отменить приём и скачать событие для календаря.</p>
+            <p><strong>Посмотреть панель администратора:</strong><br/>Email: admin@local.test<br/>Пароль: ClinicDemo2026!</p>
+            <p>Пароли локальных аккаунтов хешируются PBKDF2. Полная серверная версия проекта использует PostgreSQL/SQLite и защищённые cookie; этот HTML предназначен только для знакомства с интерфейсом. Не вводите реальные медицинские сведения.</p>
+          </div> : (
           <div className="privacy-copy">
             <p>
               Для работы кабинета сохраняются имя, email, телефон и записи на
@@ -2107,6 +2117,7 @@ function App() {
               действующую медицинскую организацию.
             </p>
           </div>
+          )}
         </Dialog>
       )}
       {auth && (
