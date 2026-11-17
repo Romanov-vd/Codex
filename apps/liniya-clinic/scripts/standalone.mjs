@@ -12,4 +12,4 @@ html=html.replace('</head>','<style>'+css+'</style></head>');
 const script=value=>'<script>'+value.replace(/<\/script/gi,'<\\/script')+'</script>';
 html=html.replace('</body>',script(setup)+script(js)+'</body>');
 html=html.replace('<title>Линия — забота, которая рядом</title>','<title>Линия — локальная демонстрация</title>');
-await mkdir('standalone',{recursive:true});await writeFile('standalone/liniya-clinic.html',html);console.log('Created standalone/liniya-clinic.html ('+Buffer.byteLength(html)+' bytes): scripts, styles, illustrations and local database adapter embedded.');
+await mkdir('standalone',{recursive:true});await writeFile('standalone/liniya-clinic.html',html.replace(/[ \t]+$/gm,''));console.log('Created standalone/liniya-clinic.html ('+Buffer.byteLength(html)+' bytes): scripts, styles, illustrations and local database adapter embedded.');
